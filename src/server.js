@@ -15,9 +15,9 @@ app.use(express.json({
 
 contract.init();
 
-app.post("/github", async (req, res) => {
+app.post("/", async (req, res) => {
 
-    if (!github.verify(req)) {
+    if (!github.handleGithubWebhook(req)) {
         return res.sendStatus(401);
     }
 

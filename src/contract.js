@@ -8,6 +8,64 @@ let api;
 let contract;
 let signer;
 
+function formatDispatchError(dispatchError) {
+    if (dispatchError.isModule) {
+        const decoded = api.registry.findMetaError(dispatchError.asModule);
+        return `${decoded.section}.${decoded.name}: ${decoded.docs.join(" ")}`;
+    }
+
+    return dispatchError.toString();
+}
+
+function isDispatchError(dispatchError, section, name) {
+    if (!dispatchError.isModule) {
+        return false;
+    }
+
+    const decoded = api.registry.findMetaError(dispatchError.asModule);
+    return decoded.section === section && decoded.name === name;
+}
+
+function getQueryGasLimit() {
+    const maxExtrinsic = api.consts.system.blockWeights.perClass.normal.maxExtrinsic;
+    const maxBlock = api.consts.system.blockWeights.maxBlock;
+    const maxWeight = maxExtrinsic.isSome ? maxExtrinsic.unwrap() : maxBlock;
+
+    return api.registry.createType("Weight", {
+        refTime: maxWeight.refTime,
+        proofSize: maxWeight.proofSize
+    });
+}
+
+async function signAndSend(tx) {
+    return new Promise((resolve, reject) => {
+        let unsubscribe;
+
+        tx.signAndSend(signer, (result) => {
+            const { status, dispatchError } = result;
+
+            if (dispatchError) {
+                if (unsubscribe) {
+                    unsubscribe();
+                }
+
+                reject(new Error(formatDispatchError(dispatchError)));
+                return;
+            }
+
+            if (status.isInBlock) {
+                if (unsubscribe) {
+                    unsubscribe();
+                }
+
+                resolve(status.asInBlock.toHex());
+            }
+        }).then((unsub) => {
+            unsubscribe = unsub;
+        }).catch(reject);
+    });
+}
+
 async function init() {
     api = await ApiPromise.create({
         provider: new WsProvider(process.env.WS_PROVIDER)
@@ -27,35 +85,53 @@ async function init() {
         type: "sr25519"
     });
 
-    signer = keyring.addFromMnemonic(process.env.MNEMONIC);
+    signer = keyring.addFromUri(process.env.MNEMONIC);
 }
 
 async function increment() {
 
-    const tx = contract.tx.increment(
+    let { gasRequired, result } = await contract.query.inc(
+        signer.address,
         {
-            gasLimit: null,
-            storageDepositLimit: null
-        }
+            gasLimit: getQueryGasLimit()
+        },
+        1
     );
 
-    return new Promise((resolve, reject) => {
+    if (result.isErr && isDispatchError(result.asErr, "revive", "AccountUnmapped")) {
+        await signAndSend(api.tx.revive.mapAccount());
 
-        tx.signAndSend(signer, ({ status, dispatchError }) => {
+        ({ gasRequired, result } = await contract.query.inc(
+            signer.address,
+            {
+                gasLimit: getQueryGasLimit()
+            },
+            1
+        ));
+    }
 
-            if (dispatchError) {
-                reject(dispatchError.toString());
-            }
+    if (result.isErr) {
+        throw new Error(formatDispatchError(result.asErr));
+    }
 
-            if (status.isInBlock) {
-                resolve(status.asInBlock.toHex());
-            }
-        });
+    const tx = contract.tx.inc(
+        {
+            gasLimit: gasRequired
+        },
+        1
+    );
 
-    });
+    return signAndSend(tx);
+}
+
+async function disconnect() {
+    if (api) {
+        await api.disconnect();
+    }
 }
 
 module.exports = {
     init,
-    increment
+    increment,
+    disconnect
 };
