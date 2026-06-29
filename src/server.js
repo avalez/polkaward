@@ -7,24 +7,28 @@ const github = require("./github");
 
 const app = express();
 
-app.use(express.json({
-    verify(req, res, buf) {
-        req.rawBody = buf;
-    }
-}));
-
 contract.init();
 
-app.post("/", async (req, res) => {
+app.post("/", express.raw({
+    type: "*/*"
+}), async (req, res) => {
 
-    if (!github.handleGithubWebhook(req)) {
-        return res.sendStatus(401);
+    const webhookResponse = await github.handleGithubWebhook(req);
+
+    if (webhookResponse.statusCode !== 202) {
+        return res
+            .status(webhookResponse.statusCode)
+            .type(webhookResponse.contentType)
+            .send(webhookResponse.body);
     }
 
     const event = req.headers["x-github-event"];
 
     if (event !== "push") {
-        return res.sendStatus(200);
+        return res
+            .status(webhookResponse.statusCode)
+            .type(webhookResponse.contentType)
+            .send(webhookResponse.body);
     }
 
     try {

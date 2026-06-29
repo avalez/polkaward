@@ -38,6 +38,10 @@ const parseWebhookBody = (body, contentType = '') => {
 }
 
 const normalizeWebhookBody = (body) => {
+  if (Buffer.isBuffer(body)) {
+    return body.toString('utf8');
+  }
+
   if (typeof body === 'string') {
     return body;
   }
@@ -49,7 +53,27 @@ const normalizeWebhookBody = (body) => {
   return String(body);
 }
 
+const getWebhookBody = (request) => {
+  if (request.rawBody) {
+    return normalizeWebhookBody(request.rawBody);
+  }
+
+  if (typeof request.body === 'string' || Buffer.isBuffer(request.body)) {
+    return normalizeWebhookBody(request.body);
+  }
+
+  if (request.body == null) {
+    return '';
+  }
+
+  return JSON.stringify(request.body);
+}
+
 const verifyGithubSignature = (body = '', signature, secret) => {
+    console.log('Verifying GitHub webhook signature', {
+        bodyLength: body.length,
+        signature
+    });
   if (!signature?.startsWith('sha256=')) {
     return false;
   }
@@ -65,7 +89,7 @@ const verifyGithubSignature = (body = '', signature, secret) => {
 }
 
 const handleGithubWebhook = async (request) => {
-  const body = normalizeWebhookBody(request.body);
+  const body = getWebhookBody(request);
   const contentType = getHeader(request.headers, 'content-type') || '';
   const delivery = getHeader(request.headers, 'x-github-delivery');
   const event = getHeader(request.headers, 'x-github-event');
