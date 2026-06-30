@@ -1,12 +1,33 @@
 const fs = require("fs");
+const path = require("path");
 
 const { ApiPromise, WsProvider } = require("@polkadot/api");
 const { ContractPromise } = require("@polkadot/api-contract");
 const { Keyring } = require("@polkadot/keyring");
 
+const projectRoot = path.resolve(__dirname, "../..");
+
 let api;
 let contract;
 let signer;
+
+function resolveProjectPath(filePath) {
+    if (!filePath) {
+        return filePath;
+    }
+
+    return path.isAbsolute(filePath) ? filePath : path.resolve(projectRoot, filePath);
+}
+
+function requireEnv(name) {
+    const value = process.env[name];
+
+    if (!value) {
+        throw new Error(`Missing required environment variable ${name}. Copy env.sample to .env and set ${name}.`);
+    }
+
+    return value;
+}
 
 function formatDispatchError(dispatchError) {
     if (dispatchError.isModule) {
@@ -67,29 +88,32 @@ async function signAndSend(tx) {
 }
 
 async function init() {
+    const wsProvider = requireEnv("WS_PROVIDER");
+    const metadataFile = requireEnv("METADATA");
+    const contractAddress = requireEnv("CONTRACT");
+    const mnemonic = requireEnv("MNEMONIC");
+
     api = await ApiPromise.create({
-        provider: new WsProvider(process.env.WS_PROVIDER)
+        provider: new WsProvider(wsProvider)
     });
 
-    const metadata = JSON.parse(
-        fs.readFileSync(process.env.METADATA)
-    );
+    const metadataPath = resolveProjectPath(metadataFile);
+    const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
 
     contract = new ContractPromise(
         api,
         metadata,
-        process.env.CONTRACT
+        contractAddress
     );
 
     const keyring = new Keyring({
         type: "sr25519"
     });
 
-    signer = keyring.addFromUri(process.env.MNEMONIC);
+    signer = keyring.addFromUri(mnemonic);
 }
 
 async function increment() {
-
     let { gasRequired, result } = await contract.query.inc(
         signer.address,
         {

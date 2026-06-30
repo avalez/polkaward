@@ -2,30 +2,30 @@ const crypto = require("crypto");
 
 const jsonResponse = (statusCode, body) => ({
   statusCode,
-  contentType: 'application/json',
+  contentType: "application/json",
   body: JSON.stringify(body),
-})
+});
 
 const logResponse = (delivery, response) => {
-  console.log('Responding to GitHub webhook', {
+  console.log("Responding to GitHub webhook", {
     delivery,
     statusCode: response.statusCode,
   });
   return response;
-}
+};
 
 const getHeader = (headers = {}, name) => {
   const entry = Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase());
   const value = entry?.[1];
   return Array.isArray(value) ? value[0] : value;
-}
+};
 
-const parseWebhookBody = (body, contentType = '') => {
+const parseWebhookBody = (body, contentType = "") => {
   if (!body) return {};
-  if (contentType.toLowerCase().includes('application/x-www-form-urlencoded')) {
-    const payload = new URLSearchParams(body).get('payload');
+  if (contentType.toLowerCase().includes("application/x-www-form-urlencoded")) {
+    const payload = new URLSearchParams(body).get("payload");
     if (!payload) {
-      throw new Error('Missing form payload');
+      throw new Error("Missing form payload");
     }
     return JSON.parse(payload);
   }
@@ -33,68 +33,64 @@ const parseWebhookBody = (body, contentType = '') => {
   try {
     return JSON.parse(body);
   } catch (error) {
-    throw new Error('Invalid JSON payload');
+    throw new Error("Invalid JSON payload");
   }
-}
+};
 
 const normalizeWebhookBody = (body) => {
   if (Buffer.isBuffer(body)) {
-    return body.toString('utf8');
+    return body.toString("utf8");
   }
 
-  if (typeof body === 'string') {
+  if (typeof body === "string") {
     return body;
   }
 
   if (body == null) {
-    return '';
+    return "";
   }
 
   return String(body);
-}
+};
 
 const getWebhookBody = (request) => {
   if (request.rawBody) {
     return normalizeWebhookBody(request.rawBody);
   }
 
-  if (typeof request.body === 'string' || Buffer.isBuffer(request.body)) {
+  if (typeof request.body === "string" || Buffer.isBuffer(request.body)) {
     return normalizeWebhookBody(request.body);
   }
 
   if (request.body == null) {
-    return '';
+    return "";
   }
 
   return JSON.stringify(request.body);
-}
+};
 
-const verifyGithubSignature = (body = '', signature, secret) => {
-    console.log('Verifying GitHub webhook signature', {
-        bodyLength: body.length,
-        signature
-    });
-  if (!signature?.startsWith('sha256=')) {
+const verifyGithubSignature = (body = "", signature, secret) => {
+  if (!signature?.startsWith("sha256=")) {
     return false;
   }
 
   const expectedSignature = `sha256=${crypto
-    .createHmac('sha256', secret)
-    .update(body, 'utf8')
-    .digest('hex')}`;
-  const expected = Buffer.from(expectedSignature, 'utf8');
-  const received = Buffer.from(signature, 'utf8');
+    .createHmac("sha256", secret)
+    .update(body, "utf8")
+    .digest("hex")}`;
+  const expected = Buffer.from(expectedSignature, "utf8");
+  const received = Buffer.from(signature, "utf8");
 
   return expected.length === received.length && crypto.timingSafeEqual(expected, received);
-}
+};
 
 const handleGithubWebhook = async (request) => {
   const body = getWebhookBody(request);
-  const contentType = getHeader(request.headers, 'content-type') || '';
-  const delivery = getHeader(request.headers, 'x-github-delivery');
-  const event = getHeader(request.headers, 'x-github-event');
+  const contentType = getHeader(request.headers, "content-type") || "";
+  const delivery = getHeader(request.headers, "x-github-delivery");
+  const event = getHeader(request.headers, "x-github-event");
 
-  console.log('Received GitHub webhook request', {
+  console.log("Received GitHub webhook request", {
     method: request.method,
     userPath: request.userPath,
     contentType,
@@ -103,21 +99,21 @@ const handleGithubWebhook = async (request) => {
     bodyLength: body.length,
   });
 
-  if (request.method !== 'POST') {
-    return logResponse(delivery, jsonResponse(405, { error: 'Method not allowed' }));
+  if (request.method !== "POST") {
+    return logResponse(delivery, jsonResponse(405, { error: "Method not allowed" }));
   }
 
-  const signature = getHeader(request.headers, 'x-hub-signature-256');
+  const signature = getHeader(request.headers, "x-hub-signature-256");
   const secret = process.env.GITHUB_SECRET;
 
   if (!secret) {
-    console.error('GITHUB_SECRET is not configured; rejecting GitHub webhook.');
-    return logResponse(delivery, jsonResponse(500, { error: 'Webhook secret is not configured' }));
+    console.error("GITHUB_SECRET is not configured; rejecting GitHub webhook.");
+    return logResponse(delivery, jsonResponse(500, { error: "Webhook secret is not configured" }));
   }
 
   if (!verifyGithubSignature(body, signature, secret)) {
-    console.warn('Rejected GitHub webhook with invalid signature', { event, delivery });
-    return logResponse(delivery, jsonResponse(401, { error: 'Invalid signature' }));
+    console.warn("Rejected GitHub webhook with invalid signature", { event, delivery });
+    return logResponse(delivery, jsonResponse(401, { error: "Invalid signature" }));
   }
 
   let payload;
@@ -127,8 +123,8 @@ const handleGithubWebhook = async (request) => {
     return logResponse(delivery, jsonResponse(400, { error: error.message }));
   }
 
-  if (event === 'ping') {
-    console.log('Received GitHub webhook ping', {
+  if (event === "ping") {
+    console.log("Received GitHub webhook ping", {
       delivery,
       repository: payload.repository?.full_name,
       hookId: payload.hook_id,
@@ -136,7 +132,7 @@ const handleGithubWebhook = async (request) => {
     return logResponse(delivery, jsonResponse(200, { ok: true, event, delivery }));
   }
 
-  console.log('Received GitHub webhook', {
+  console.log("Received GitHub webhook", {
     event,
     delivery,
     action: payload.action,
@@ -148,5 +144,5 @@ const handleGithubWebhook = async (request) => {
 };
 
 module.exports = {
-    handleGithubWebhook
+  handleGithubWebhook
 };

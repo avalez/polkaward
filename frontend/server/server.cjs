@@ -1,18 +1,17 @@
-require("dotenv").config();
+const path = require("path");
 
 const express = require("express");
 
-const contract = require("./contract");
-const github = require("./github");
+const contract = require("./contract.cjs");
+const github = require("./github.cjs");
 
 const app = express();
-
-contract.init();
+const distDir = path.resolve(__dirname, "../dist");
+const port = process.env.PORT || 3000;
 
 app.post("/", express.raw({
     type: "*/*"
 }), async (req, res) => {
-
     const webhookResponse = await github.handleGithubWebhook(req);
 
     if (webhookResponse.statusCode !== 202) {
@@ -32,7 +31,6 @@ app.post("/", express.raw({
     }
 
     try {
-
         const hash = await contract.increment();
 
         console.log("Contract updated:", hash);
@@ -41,19 +39,30 @@ app.post("/", express.raw({
             success: true,
             tx: hash
         });
-
     } catch (err) {
-
         console.error(err);
 
         res.status(500).json({
             error: err.toString()
         });
-
     }
-
 });
 
-app.listen(process.env.PORT, () => {
-    console.log(`Listening on ${process.env.PORT}`);
+app.use(express.static(distDir));
+
+app.get("/{*splat}", (req, res) => {
+    res.sendFile(path.join(distDir, "index.html"));
+});
+
+async function start() {
+    await contract.init();
+
+    app.listen(port, () => {
+        console.log(`Listening on ${port}`);
+    });
+}
+
+start().catch((error) => {
+    console.error(error);
+    process.exit(1);
 });
