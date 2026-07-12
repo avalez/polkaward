@@ -5,7 +5,7 @@ import { RococoContractsTestnet } from 'useink/chains';
 import { NotificationsProvider } from 'useink/notifications';
 import App from './App.tsx';
 import './Global.css';
-import metadata from './assets/incrementer.json';
+import metadata from './assets/polkaward.json';
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
