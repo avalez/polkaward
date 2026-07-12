@@ -1,5 +1,5 @@
 [package]
-name = "incrementer"
+name = "polkaward"
 version = "6.0.0-beta.1"
 authors = ["Use Ink <ink@use.ink>"]
 edition = "2024"
@@ -10,6 +10,7 @@ ink = { version = "6.0.0-beta.1", default-features = false }
 
 [lib]
 path = "src/lib.rs"
+doctest = false
 
 [features]
 default = ["std"]
