@@ -11,6 +11,18 @@ const distDir = path.resolve(__dirname, "../dist");
 const port = process.env.PORT || 3000;
 const githubFlowStore = createGitHubFlowStore();
 
+app.use((req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "http://localhost:5173");
+    res.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type");
+
+    if (req.method === "OPTIONS") {
+        return res.sendStatus(204);
+    }
+
+    return next();
+});
+
 app.use(express.json());
 
 app.post("/", express.raw({
@@ -61,19 +73,24 @@ app.post("/", express.raw({
 });
 
 app.post("/github/approval", (req, res) => {
-    const { repo, walletAddress, installationId } = req.body || {};
+    try {
+        const { repo, walletAddress, installationId } = req.body || {};
 
-    if (!repo || !walletAddress) {
-        return res.status(400).json({ error: "repo and walletAddress are required" });
+        if (!repo || !walletAddress) {
+            return res.status(400).json({ success: false, error: "repo and walletAddress are required" });
+        }
+
+        githubFlowStore.setRepoWalletMapping(repo, walletAddress, installationId || null);
+        githubFlowStore.setPendingApproval(repo, {
+            action: "release_payment",
+            status: "pending"
+        });
+
+        return res.json({ success: true, repo, walletAddress });
+    } catch (error) {
+        console.error("GitHub approval error", error);
+        return res.status(500).json({ success: false, error: error instanceof Error ? error.message : "GitHub approval failed" });
     }
-
-    githubFlowStore.setRepoWalletMapping(repo, walletAddress, installationId || null);
-    githubFlowStore.setPendingApproval(repo, {
-        action: "release_payment",
-        status: "pending"
-    });
-
-    res.json({ success: true, repo, walletAddress });
 });
 
 app.get("/github/approvals", (req, res) => {

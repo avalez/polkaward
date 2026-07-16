@@ -1,19 +1,20 @@
 import { ApiPromise, WsProvider } from '@polkadot/api';
-import { Abi, BlueprintPromise, ContractPromise } from '@polkadot/api-contract';
+import { Abi, CodePromise, ContractPromise } from '@polkadot/api-contract';
 import type { Signer } from '@polkadot/api/types';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 
 const GITHUB_APPROVAL_API = '/github/approval';
+const API_BASE_URL = import.meta.env.DEV ? 'http://127.0.0.1:3000' : '';
 import {
   useInstalledWallets,
   useWallet,
 } from 'useink';
 import contractMetadata from './assets/polkaward.contract.json';
 import metadata from './assets/polkaward.json';
-import { POLKAWARD_CODE_HASH } from './constants';
 
 const LOCAL_RPC = 'ws://127.0.0.1:9944';
 const DEFAULT_DECIMALS = 12;
+const MAX_STORAGE_DEPOSIT_LIMIT = (1n << 128n) - 1n;
 const polkawardAbi = new Abi(contractMetadata);
 
 const formatContractName = (name: string) =>
@@ -73,15 +74,96 @@ const stateFromOutput = (output: unknown) => {
   return Object.keys(outer)[0] ?? 'Unknown';
 };
 
+const resolveContractQueryMethod = (
+  contract: ContractPromise,
+  methodName: string,
+) => {
+  const queryApi = contract.query as unknown as Record<string, unknown>;
+
+  if (typeof queryApi[methodName] === 'function') {
+    return queryApi[methodName] as (accountId: string, options: unknown, ...args: unknown[]) => Promise<unknown>;
+  }
+
+  const camelCase = methodName.replace(/_([a-z])/g, (_, char) => char.toUpperCase());
+  const snakeCase = methodName.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+  const candidates = [camelCase, snakeCase];
+
+  for (const candidate of candidates) {
+    if (typeof queryApi[candidate] === 'function') {
+      return queryApi[candidate] as (accountId: string, options: unknown, ...args: unknown[]) => Promise<unknown>;
+    }
+  }
+
+  return undefined;
+};
+
 const getGasLimit = (api: ApiPromise) => {
   const systemConsts = api.consts.system as unknown as {
-    blockWeights?: { maxBlock: unknown };
+    blockWeights?: {
+      toJSON: () => {
+        maxBlock: { refTime: string | number; proofSize: string | number };
+        perClass?: {
+          normal?: {
+            maxExtrinsic?: { refTime: string | number; proofSize: string | number } | null;
+            maxTotal?: { refTime: string | number; proofSize: string | number } | null;
+          };
+        };
+      };
+    };
     maximumBlockWeight?: unknown;
   };
 
-  return (
-    systemConsts.blockWeights?.maxBlock ?? systemConsts.maximumBlockWeight
-  ) as Parameters<ContractPromise['tx']['call']>[0]['gasLimit'];
+  const blockWeights = systemConsts.blockWeights?.toJSON();
+  const normalLimits = blockWeights?.perClass?.normal;
+  const transactionLimit =
+    normalLimits?.maxExtrinsic ?? normalLimits?.maxTotal ?? blockWeights?.maxBlock;
+
+  if (transactionLimit) {
+    // maxBlock is not a valid gas limit: normal transactions have a lower
+    // per-extrinsic cap and the extrinsic wrapper also consumes weight.
+    return api.registry.createType('Weight', {
+      refTime: (BigInt(transactionLimit.refTime) * 8n) / 10n,
+      proofSize: (BigInt(transactionLimit.proofSize) * 8n) / 10n,
+    }) as Parameters<ContractPromise['tx']['call']>[0]['gasLimit'];
+  }
+
+  return systemConsts.maximumBlockWeight as Parameters<ContractPromise['tx']['call']>[0]['gasLimit'];
+};
+
+const extractContractAddress = (result: {
+  contract?: { address?: { toString: () => string } };
+  events?: Array<{
+    event?: {
+      section?: string;
+      method?: string;
+      data?: Array<{ toString?: () => string }>;
+    };
+  }>;
+}) => {
+  const directAddress = result.contract?.address?.toString?.();
+  if (directAddress) {
+    return directAddress;
+  }
+
+  for (const record of result.events ?? []) {
+    const event = record.event;
+    if (!event || (event.section !== 'contracts' && event.section !== 'revive')) {
+      continue;
+    }
+
+    if (event.method !== 'Instantiated') {
+      continue;
+    }
+
+    const contractId = event.data?.[1] ?? event.data?.[0];
+    const address = contractId?.toString?.();
+
+    if (address) {
+      return address;
+    }
+  }
+
+  return '';
 };
 
 type SignAndSendStatus = 'None' | 'PendingSignature' | 'InBlock' | 'Finalized';
@@ -95,7 +177,7 @@ function EscrowInstance({
   accountAddress: string;
   api: ApiPromise;
   address: string;
-  signer: Signer;
+  signer?: Signer;
 }) {
   const contract = useMemo(
     () => new ContractPromise(api, polkawardAbi, address),
@@ -115,12 +197,20 @@ function EscrowInstance({
 
   const refreshState = async () => {
     try {
-      const result = await contract.query.getState(accountAddress, {
+      const queryMethod = resolveContractQueryMethod(contract, 'get_state');
+      const effectiveAddress = accountAddress || '5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY';
+
+      if (!queryMethod) {
+        throw new Error('The contract does not expose a state query method.');
+      }
+
+      const result = await queryMethod(effectiveAddress, {
         gasLimit: getGasLimit(api),
         storageDepositLimit: null,
       });
 
-      setStateStr(stateFromOutput(result.output));
+      const output = (result as { output?: unknown }).output;
+      setStateStr(stateFromOutput(output));
     } catch (error) {
       setStateStr('Unknown');
       setActionError(
@@ -134,6 +224,11 @@ function EscrowInstance({
   }, [contract, accountAddress]);
 
   const signMessage = (message: 'releasePayment' | 'refundClient' | 'raiseDispute') => {
+    if (!signer) {
+      setActionError('Connect a wallet signer to perform escrow actions.');
+      return;
+    }
+
     setActionError('');
     setActionStatus('PendingSignature');
 
@@ -230,7 +325,7 @@ function EscrowInstance({
 
         <button
           className='h-11 w-full rounded-md bg-rose-500 px-4 font-semibold text-slate-950 transition hover:bg-rose-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400'
-          disabled={isActionPending || stateStr !== 'AwaitingApproval'}
+          disabled={isActionPending || stateStr !== 'AwaitingApproval' || !signer}
           onClick={() => signMessage('raiseDispute')}
           type='button'
         >
@@ -247,15 +342,17 @@ function App() {
   const wallet = wallets[0];
   const [api, setApi] = useState<ApiPromise>();
   const [apiError, setApiError] = useState('');
-  const [activeContractAddress, setActiveContractAddress] = useState('');
-  const [provider, setProvider] = useState('');
-  const [arbitrator, setArbitrator] = useState('');
+  const [activeContractAddress, setActiveContractAddress] = useState(
+    () => import.meta.env.VITE_CONTRACT_ADDRESS || '',
+  );
+  const [provider, setProvider] = useState('0x1111111111111111111111111111111111111111');
+  const [arbitrator, setArbitrator] = useState('0x2222222222222222222222222222222222222222');
   const [duration, setDuration] = useState('100');
   const [deposit, setDeposit] = useState('1');
   const [formError, setFormError] = useState('');
   const [deployError, setDeployError] = useState('');
   const [deployStatus, setDeployStatus] = useState<SignAndSendStatus>('None');
-  const [githubRepo, setGithubRepo] = useState('octo/demo');
+  const [githubRepo, setGithubRepo] = useState('avalez/polkaward');
   const [githubApprovalStatus, setGithubApprovalStatus] = useState('');
 
   useEffect(() => {
@@ -299,6 +396,7 @@ function App() {
     ? 'Creating...'
     : 'Create Funded Escrow';
   const deploymentError = formError || deployError || apiError;
+  const signer = account?.wallet?.extension?.signer as Signer | undefined;
 
   const connectGitHubApproval = async () => {
     if (!account?.address) {
@@ -307,7 +405,7 @@ function App() {
     }
 
     try {
-      const response = await fetch(GITHUB_APPROVAL_API, {
+      const response = await fetch(`${API_BASE_URL}${GITHUB_APPROVAL_API}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -317,9 +415,15 @@ function App() {
         }),
       });
 
-      const data = await response.json();
+      let data: { success?: boolean; error?: string } = {};
 
-      if (!response.ok) {
+      try {
+        data = await response.json();
+      } catch {
+        data = {};
+      }
+
+      if (!response.ok || data.success === false) {
         throw new Error(data.error || 'Could not register GitHub approval.');
       }
 
@@ -329,7 +433,7 @@ function App() {
     }
   };
 
-  const createEscrow = (event: FormEvent<HTMLFormElement>) => {
+  const createEscrow = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setFormError('');
     setDeployError('');
@@ -360,50 +464,81 @@ function App() {
       return;
     }
 
-    const blueprint = new BlueprintPromise(
-      api,
-      polkawardAbi,
-      POLKAWARD_CODE_HASH,
-    );
-
     setDeployStatus('PendingSignature');
 
-    blueprint.tx
+    try {
+      const mappedAddress = await api.call.reviveApi.address(account.address);
+      const originalAccount = await api.query.revive.originalAccount(mappedAddress) as unknown as {
+        isNone: boolean;
+      };
+
+      if (originalAccount.isNone) {
+        await new Promise<void>((resolve, reject) => {
+          let unsubscribe: (() => void) | undefined;
+
+          api.tx.revive
+            .mapAccount()
+            .signAndSend(
+              account.address,
+              { signer: signer! },
+              (result) => {
+                if (result.dispatchError) {
+                  unsubscribe?.();
+                  reject(new Error(result.dispatchError.toString()));
+                  return;
+                }
+
+                if (result.status.isFinalized) {
+                  unsubscribe?.();
+                  resolve();
+                }
+              },
+            )
+            .then((stop) => {
+              unsubscribe = stop;
+            })
+            .catch(reject);
+        });
+      }
+    } catch (error) {
+      setDeployStatus('None');
+      setDeployError(
+        error instanceof Error ? error.message : 'Account mapping failed.',
+      );
+      return;
+    }
+
+    const code = new CodePromise(
+      api,
+      polkawardAbi,
+      contractMetadata.source.contract_binary,
+    );
+
+    code.tx
       .new(
         {
           gasLimit: getGasLimit(api),
-          storageDepositLimit: null,
+          // pallet-revive uses a mandatory Balance here; null is encoded as zero.
+          // Only the deposit actually consumed is held from the caller.
+          storageDepositLimit: MAX_STORAGE_DEPOSIT_LIMIT,
           value,
         },
         provider.trim(),
         arbitrator.trim(),
         durationBlocks,
       )
-      .signAndSend(account.address, { signer: account.wallet.extension.signer }, (result) => {
+      .signAndSend(account.address, { signer: signer! }, (result) => {
         if (result.status.isInBlock) {
           setDeployStatus('InBlock');
-          const contractAddress = (
-            result as typeof result & {
-              contract?: { address: { toString: () => string } };
-            }
-          ).contract?.address.toString();
-
-          if (contractAddress) {
-            setActiveContractAddress(contractAddress);
-          }
         }
 
         if (result.status.isFinalized) {
           setDeployStatus('Finalized');
-          const contractAddress = (
-            result as typeof result & {
-              contract?: { address: { toString: () => string } };
-            }
-          ).contract?.address.toString();
+        }
 
-          if (contractAddress) {
-            setActiveContractAddress(contractAddress);
-          }
+        const contractAddress = extractContractAddress(result as Parameters<typeof extractContractAddress>[0]);
+        if (contractAddress) {
+          setActiveContractAddress(contractAddress);
         }
 
         if (result.dispatchError) {
@@ -521,7 +656,7 @@ function App() {
 
                 {activeContractAddress ? (
                   <p className='rounded border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200'>
-                    Created escrow {activeContractAddress}
+                    Escrow contract {activeContractAddress}
                   </p>
                 ) : null}
 
@@ -534,12 +669,12 @@ function App() {
                 </button>
               </form>
 
-              {activeContractAddress && api && account.wallet?.extension.signer ? (
+              {activeContractAddress && api ? (
                 <EscrowInstance
-                  accountAddress={account.address}
+                  accountAddress={account?.address ?? ''}
                   address={activeContractAddress}
                   api={api}
-                  signer={account.wallet.extension.signer}
+                  signer={signer}
                 />
               ) : (
                 <div className='border-y border-slate-800 py-4'>

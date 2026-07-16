@@ -63,29 +63,100 @@ function normalizeContractOutput(output) {
         return "Unknown";
     }
 
-    const human = typeof output.toHuman === "function" ? output.toHuman() : output;
-    const json = typeof output.toJSON === "function" ? output.toJSON() : human;
+    const candidates = [];
+    const direct = output;
 
-    if (typeof json === "string") {
-        return json;
+    if (typeof direct.toHuman === "function") {
+        candidates.push(direct.toHuman());
     }
 
-    if (json && typeof json === "object") {
-        const outer = json;
-        const ok = outer.ok ?? outer.Ok;
-
-        if (typeof ok === "string") {
-            return ok;
-        }
-
-        if (ok && typeof ok === "object") {
-            return Object.keys(ok)[0] ?? "Unknown";
-        }
-
-        return Object.keys(outer)[0] ?? "Unknown";
+    if (typeof direct.toJSON === "function") {
+        candidates.push(direct.toJSON());
     }
 
-    return String(human ?? "Unknown");
+    candidates.push(direct);
+
+    for (const candidate of candidates) {
+        if (typeof candidate === "string") {
+            return candidate;
+        }
+
+        if (typeof candidate === "number" || typeof candidate === "boolean") {
+            return String(candidate);
+        }
+
+        if (candidate && typeof candidate === "object") {
+            const values = [candidate.ok, candidate.Ok, candidate.value, candidate.Value, candidate.result, candidate.Result];
+
+            for (const value of values) {
+                if (typeof value === "string") {
+                    return value;
+                }
+
+                if (value && typeof value === "object") {
+                    const nestedValues = [value.ok, value.Ok, value.value, value.Value];
+
+                    for (const nestedValue of nestedValues) {
+                        if (typeof nestedValue === "string") {
+                            return nestedValue;
+                        }
+                    }
+
+                    if (typeof value === "object") {
+                        const keys = Object.keys(value);
+                        if (keys.length === 1) {
+                            const [firstKey] = keys;
+                            const nested = value[firstKey];
+                            if (typeof nested === "string") {
+                                return nested;
+                            }
+                        }
+                    }
+                }
+            }
+
+            const keys = Object.keys(candidate);
+            if (keys.length === 1) {
+                const [firstKey] = keys;
+                const nested = candidate[firstKey];
+                if (typeof nested === "string") {
+                    return nested;
+                }
+            }
+        }
+    }
+
+    return "Unknown";
+}
+
+function resolveContractMethod(methodName, kind) {
+    if (!contract || !contract[kind] || typeof contract[kind] !== "object") {
+        return null;
+    }
+
+    if (typeof contract[kind][methodName] === "function") {
+        return contract[kind][methodName];
+    }
+
+    const candidates = [];
+    const camelCase = methodName.replace(/_([a-z])/g, (_, char) => char.toUpperCase());
+    const snakeCase = methodName.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+
+    if (camelCase !== methodName) {
+        candidates.push(camelCase);
+    }
+
+    if (snakeCase !== methodName) {
+        candidates.push(snakeCase);
+    }
+
+    for (const candidate of candidates) {
+        if (typeof contract[kind][candidate] === "function") {
+            return contract[kind][candidate];
+        }
+    }
+
+    return null;
 }
 
 async function signAndSend(tx) {
@@ -150,29 +221,49 @@ async function init() {
 }
 
 async function queryMessage(methodName, args = [], options = {}) {
+    const queryMethod = resolveContractMethod(methodName, "query");
+
+    if (!queryMethod) {
+        throw new Error(`Unsupported contract query method: ${methodName}`);
+    }
+
     const queryOptions = {
         gasLimit: getQueryGasLimit(),
         ...options
     };
 
-    let { gasRequired, result } = await contract.query[methodName](signer.address, queryOptions, ...args);
+    let response = await queryMethod(signer.address, queryOptions, ...args);
+    let { gasRequired, result, output } = response;
 
     if (result.isErr && isDispatchError(result.asErr, "revive", "AccountUnmapped")) {
         await signAndSend(api.tx.revive.mapAccount());
 
-        ({ gasRequired, result } = await contract.query[methodName](signer.address, queryOptions, ...args));
+        response = await queryMethod(signer.address, queryOptions, ...args);
+        ({ gasRequired, result, output } = response);
     }
 
     if (result.isErr) {
         throw new Error(formatDispatchError(result.asErr));
     }
 
-    return { gasRequired, result };
+    return { gasRequired, result, output };
 }
 
 async function sendMessage(methodName, args = [], options = {}) {
-    const { gasRequired } = await queryMessage(methodName, args, options);
-    const tx = contract.tx[methodName](
+    const txMethod = resolveContractMethod(methodName, "tx");
+
+    if (!txMethod) {
+        throw new Error(`Unsupported contract transaction method: ${methodName}`);
+    }
+
+    let gasRequired = getQueryGasLimit();
+
+    const queryMethod = resolveContractMethod(methodName, "query");
+    if (queryMethod) {
+        ({ gasRequired } = await queryMessage(methodName, args, options));
+    }
+
+    const tx = txMethod(
         {
             gasLimit: gasRequired,
             ...options
@@ -202,8 +293,8 @@ async function raiseDispute() {
 }
 
 async function getState() {
-    const { result } = await queryMessage("get_state");
-    return normalizeContractOutput(result.output);
+    const { output } = await queryMessage("get_state");
+    return normalizeContractOutput(output);
 }
 
 async function increment() {
