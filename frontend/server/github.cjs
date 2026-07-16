@@ -129,7 +129,10 @@ const handleGithubWebhook = async (request) => {
       repository: payload.repository?.full_name,
       hookId: payload.hook_id,
     });
-    return logResponse(delivery, jsonResponse(200, { ok: true, event, delivery }));
+    return {
+      ...logResponse(delivery, jsonResponse(200, { ok: true, event, delivery })),
+      payload,
+    };
   }
 
   console.log("Received GitHub webhook", {
@@ -140,7 +143,10 @@ const handleGithubWebhook = async (request) => {
     sender: payload.sender?.login,
   });
 
-  return logResponse(delivery, jsonResponse(202, { ok: true, event, delivery }));
+  return {
+    ...logResponse(delivery, jsonResponse(202, { ok: true, event, delivery })),
+    payload,
+  };
 };
 
 module.exports = {

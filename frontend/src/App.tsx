@@ -13,6 +13,7 @@ import contractMetadata from './assets/polkaward.contract.json';
 import metadata from './assets/polkaward.json';
 
 const LOCAL_RPC = 'ws://127.0.0.1:9944';
+const ACTIVE_CONTRACT_STORAGE_KEY = 'polkaward.activeContractAddress';
 const DEFAULT_DECIMALS = 12;
 const MAX_STORAGE_DEPOSIT_LIMIT = (1n << 128n) - 1n;
 const polkawardAbi = new Abi(contractMetadata);
@@ -221,6 +222,12 @@ function EscrowInstance({
 
   useEffect(() => {
     void refreshState();
+
+    const interval = window.setInterval(() => {
+      void refreshState();
+    }, 3_000);
+
+    return () => window.clearInterval(interval);
   }, [contract, accountAddress]);
 
   const signMessage = (message: 'releasePayment' | 'refundClient' | 'raiseDispute') => {
@@ -281,7 +288,9 @@ function EscrowInstance({
             <span className='mb-1 text-sm text-slate-400'>Escrow State</span>
             <span
               className={`rounded-full px-3 py-1 text-sm font-semibold ${
-                stateStr === 'AwaitingApproval'
+                stateStr === 'PendingWork'
+                  ? 'bg-cyan-500/20 text-cyan-300'
+                  : stateStr === 'AwaitingApproval'
                   ? 'bg-amber-500/20 text-amber-300'
                   : stateStr === 'Completed'
                     ? 'bg-emerald-500/20 text-emerald-300'
@@ -343,10 +352,11 @@ function App() {
   const [api, setApi] = useState<ApiPromise>();
   const [apiError, setApiError] = useState('');
   const [activeContractAddress, setActiveContractAddress] = useState(
-    () => import.meta.env.VITE_CONTRACT_ADDRESS || '',
+    () => localStorage.getItem(ACTIVE_CONTRACT_STORAGE_KEY) || import.meta.env.VITE_CONTRACT_ADDRESS || '',
   );
   const [provider, setProvider] = useState('0x1111111111111111111111111111111111111111');
-  const [arbitrator, setArbitrator] = useState('0x2222222222222222222222222222222222222222');
+  const [arbitrator, setArbitrator] = useState('');
+  const [webhookSignerError, setWebhookSignerError] = useState('');
   const [duration, setDuration] = useState('100');
   const [deposit, setDeposit] = useState('1');
   const [formError, setFormError] = useState('');
@@ -354,6 +364,26 @@ function App() {
   const [deployStatus, setDeployStatus] = useState<SignAndSendStatus>('None');
   const [githubRepo, setGithubRepo] = useState('avalez/polkaward');
   const [githubApprovalStatus, setGithubApprovalStatus] = useState('');
+
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/contract/signer-address`)
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`Webhook server returned HTTP ${response.status}.`);
+        }
+        return response.json() as Promise<{ address?: string }>;
+      })
+      .then((data) => {
+        if (!data?.address) throw new Error('Webhook server did not return a signer address.');
+        setArbitrator(data.address);
+        setWebhookSignerError('');
+      })
+      .catch((error: unknown) => {
+        setWebhookSignerError(
+          error instanceof Error ? error.message : 'Could not load webhook signer.',
+        );
+      });
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -398,7 +428,7 @@ function App() {
   const deploymentError = formError || deployError || apiError;
   const signer = account?.wallet?.extension?.signer as Signer | undefined;
 
-  const connectGitHubApproval = async () => {
+  const connectGitHubApproval = async (contractAddress = activeContractAddress) => {
     if (!account?.address) {
       setGithubApprovalStatus('Connect a wallet first.');
       return;
@@ -412,6 +442,7 @@ function App() {
           repo: githubRepo,
           walletAddress: account.address,
           installationId: 'local-demo',
+          contractAddress: contractAddress || undefined,
         }),
       });
 
@@ -445,6 +476,11 @@ function App() {
 
     if (!account?.wallet?.extension?.signer) {
       setFormError('Wallet signer is not ready.');
+      return;
+    }
+
+    if (!arbitrator) {
+      setFormError('Wait for the webhook signer address before creating an escrow.');
       return;
     }
 
@@ -539,6 +575,8 @@ function App() {
         const contractAddress = extractContractAddress(result as Parameters<typeof extractContractAddress>[0]);
         if (contractAddress) {
           setActiveContractAddress(contractAddress);
+          localStorage.setItem(ACTIVE_CONTRACT_STORAGE_KEY, contractAddress);
+          void connectGitHubApproval(contractAddress);
         }
 
         if (result.dispatchError) {
@@ -608,17 +646,18 @@ function App() {
                   </label>
 
                   <label className='grid gap-2 text-sm font-medium text-slate-300'>
-                    Arbitrator H160 Address
+                    Webhook signer / Arbitrator
                     <input
                       className='h-11 w-full rounded-md border border-slate-700 bg-slate-950 px-3 font-mono text-sm text-slate-100 outline-none transition focus:border-cyan-400 disabled:cursor-not-allowed disabled:opacity-60'
-                      onChange={(event) =>
-                        setArbitrator(event.currentTarget.value)
-                      }
-                      placeholder='0x...'
+                      placeholder='Loading from webhook server...'
+                      readOnly
                       required
                       type='text'
                       value={arbitrator}
                     />
+                    {webhookSignerError ? (
+                      <span className='text-xs text-rose-300'>{webhookSignerError}</span>
+                    ) : null}
                   </label>
 
                   <label className='grid gap-2 text-sm font-medium text-slate-300'>
@@ -662,7 +701,7 @@ function App() {
 
                 <button
                   className='h-11 w-full rounded-md bg-cyan-400 px-4 font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400'
-                  disabled={isCreatingEscrow || !api}
+                  disabled={isCreatingEscrow || !api || !arbitrator}
                   type='submit'
                 >
                   {createButtonLabel}

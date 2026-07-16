@@ -9,6 +9,7 @@ const projectRoot = path.resolve(__dirname, "../..");
 
 let api;
 let contract;
+let contractMetadata;
 let signer;
 
 function resolveProjectPath(filePath) {
@@ -129,6 +130,25 @@ function normalizeContractOutput(output) {
     return "Unknown";
 }
 
+function findContractError(value) {
+    if (!value || typeof value !== "object") {
+        return null;
+    }
+
+    for (const [key, nested] of Object.entries(value)) {
+        if (key.toLowerCase() === "err") {
+            return typeof nested === "string" ? nested : JSON.stringify(nested);
+        }
+
+        const found = findContractError(nested);
+        if (found) {
+            return found;
+        }
+    }
+
+    return null;
+}
+
 function resolveContractMethod(methodName, kind) {
     if (!contract || !contract[kind] || typeof contract[kind] !== "object") {
         return null;
@@ -205,11 +225,11 @@ async function init() {
         throw new Error(`Contract metadata file not found: ${metadataPath}. Run cargo contract build or update METADATA in your env file.`);
     }
 
-    const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
+    contractMetadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
 
     contract = new ContractPromise(
         api,
-        metadata,
+        contractMetadata,
         contractAddress
     );
 
@@ -218,6 +238,14 @@ async function init() {
     });
 
     signer = keyring.addFromUri(mnemonic);
+}
+
+function setContractAddress(contractAddress) {
+    if (!api || !contractMetadata) {
+        throw new Error("Contract service is not initialized");
+    }
+
+    contract = new ContractPromise(api, contractMetadata, contractAddress);
 }
 
 async function queryMessage(methodName, args = [], options = {}) {
@@ -246,7 +274,16 @@ async function queryMessage(methodName, args = [], options = {}) {
         throw new Error(formatDispatchError(result.asErr));
     }
 
+    const contractError = findContractError(output?.toJSON?.() ?? output);
+    if (contractError) {
+        throw new Error(`Contract returned an error: ${contractError}`);
+    }
+
     return { gasRequired, result, output };
+}
+
+async function getSignerAddress() {
+    return (await api.call.reviveApi.address(signer.address)).toString();
 }
 
 async function sendMessage(methodName, args = [], options = {}) {
@@ -284,6 +321,10 @@ async function releasePayment() {
     return sendMessage("release_payment");
 }
 
+async function completeWork() {
+    return sendMessage("complete_work");
+}
+
 async function refundClient() {
     return sendMessage("refund_client");
 }
@@ -298,7 +339,7 @@ async function getState() {
 }
 
 async function increment() {
-    return getState();
+    return completeWork();
 }
 
 async function disconnect() {
@@ -309,7 +350,10 @@ async function disconnect() {
 
 module.exports = {
     init,
+    setContractAddress,
+    getSignerAddress,
     createEscrow,
+    completeWork,
     releasePayment,
     refundClient,
     raiseDispute,

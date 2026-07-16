@@ -38,7 +38,8 @@ app.post("/", express.raw({
     }
 
     const event = req.headers["x-github-event"];
-    const repo = req.body?.repository?.full_name || req.body?.repository?.name;
+    const repo = webhookResponse.payload?.repository?.full_name ||
+        webhookResponse.payload?.repository?.name;
 
     if (event !== "push") {
         return res
@@ -47,15 +48,26 @@ app.post("/", express.raw({
             .send(webhookResponse.body);
     }
 
-    if (repo) {
-        githubFlowStore.setPendingApproval(repo, {
-            action: "release_payment",
-            status: "pending"
-        });
+    if (!repo) {
+        return res.status(400).json({ error: "GitHub webhook payload has no repository name" });
     }
 
+    githubFlowStore.setPendingApproval(repo, {
+        action: "complete_work",
+        status: "pending"
+    });
+
     try {
-        const hash = await contract.increment();
+        const mapping = githubFlowStore.getRepoWalletMapping(repo);
+
+        if (!mapping?.contractAddress) {
+            return res.status(409).json({
+                error: `No escrow contract is linked to ${repo}. Create an escrow or reconnect GitHub approval.`
+            });
+        }
+
+        contract.setContractAddress(mapping.contractAddress);
+        const hash = await contract.completeWork();
 
         console.log("Contract updated:", hash);
 
@@ -74,19 +86,24 @@ app.post("/", express.raw({
 
 app.post("/github/approval", (req, res) => {
     try {
-        const { repo, walletAddress, installationId } = req.body || {};
+        const { repo, walletAddress, installationId, contractAddress } = req.body || {};
 
         if (!repo || !walletAddress) {
             return res.status(400).json({ success: false, error: "repo and walletAddress are required" });
         }
 
-        githubFlowStore.setRepoWalletMapping(repo, walletAddress, installationId || null);
+        githubFlowStore.setRepoWalletMapping(
+            repo,
+            walletAddress,
+            installationId || null,
+            contractAddress || null
+        );
         githubFlowStore.setPendingApproval(repo, {
-            action: "release_payment",
+            action: "complete_work",
             status: "pending"
         });
 
-        return res.json({ success: true, repo, walletAddress });
+        return res.json({ success: true, repo, walletAddress, contractAddress: contractAddress || null });
     } catch (error) {
         console.error("GitHub approval error", error);
         return res.status(500).json({ success: false, error: error instanceof Error ? error.message : "GitHub approval failed" });
@@ -95,6 +112,14 @@ app.post("/github/approval", (req, res) => {
 
 app.get("/github/approvals", (req, res) => {
     res.json(githubFlowStore.getPendingApprovals());
+});
+
+app.get("/contract/signer-address", async (_req, res) => {
+    try {
+        res.json({ address: await contract.getSignerAddress() });
+    } catch (error) {
+        res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
 });
 
 app.use(express.static(distDir));
