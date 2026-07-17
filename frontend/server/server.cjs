@@ -23,11 +23,9 @@ app.use((req, res, next) => {
     return next();
 });
 
-app.use(express.json());
+const webhookBodyParser = express.raw({ type: "*/*" });
 
-app.post("/", express.raw({
-    type: "*/*"
-}), async (req, res) => {
+async function handleWebhook(req, res) {
     const webhookResponse = await github.handleGithubWebhook(req);
 
     if (webhookResponse.statusCode !== 202) {
@@ -82,7 +80,16 @@ app.post("/", express.raw({
             error: err.toString()
         });
     }
-});
+}
+
+// Prefer the explicit path in GitHub settings. Keep POST / for compatibility
+// with installations that already point at the server root.
+app.post("/github/webhook", webhookBodyParser, handleWebhook);
+app.post("/", webhookBodyParser, handleWebhook);
+
+// JSON parsing must come after webhook routes so signature verification sees
+// GitHub's exact request bytes.
+app.use(express.json());
 
 app.post("/github/approval", (req, res) => {
     try {
