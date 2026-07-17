@@ -1,5 +1,17 @@
 const path = require("path");
 
+// Support launching this file directly (`node frontend/server/server.cjs`).
+// Existing environment variables retain precedence over values from the file.
+if (typeof process.loadEnvFile === "function") {
+    try {
+        process.loadEnvFile(path.resolve(__dirname, "../../.env"));
+    } catch (error) {
+        if (error?.code !== "ENOENT") {
+            throw error;
+        }
+    }
+}
+
 const express = require("express");
 
 const contract = require("./contract.cjs");

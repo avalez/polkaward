@@ -11,6 +11,7 @@ let api;
 let contract;
 let contractMetadata;
 let signer;
+let signerAddress;
 
 function resolveProjectPath(filePath) {
     if (!filePath) {
@@ -238,6 +239,14 @@ async function init() {
     });
 
     signer = keyring.addFromUri(mnemonic);
+
+    signerAddress = (await api.call.reviveApi.address(signer.address)).toString();
+    const originalAccount = await api.query.revive.originalAccount(signerAddress);
+
+    if (originalAccount.isNone) {
+        await signAndSend(api.tx.revive.mapAccount());
+        signerAddress = (await api.call.reviveApi.address(signer.address)).toString();
+    }
 }
 
 function setContractAddress(contractAddress) {
@@ -283,7 +292,7 @@ async function queryMessage(methodName, args = [], options = {}) {
 }
 
 async function getSignerAddress() {
-    return (await api.call.reviveApi.address(signer.address)).toString();
+    return signerAddress;
 }
 
 async function sendMessage(methodName, args = [], options = {}) {

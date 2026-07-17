@@ -12,6 +12,9 @@
     "frontend:preview": "npm --prefix frontend run preview",
     "server": "node --env-file=.env frontend/server/server.cjs",
     "server:contract:test": "node --env-file=.env frontend/server/contract_test.cjs",
-    "dev": "npm run frontend:dev"
+    "dev": "concurrently --kill-others --names server,ui --prefix-colors yellow,cyan \"npm run server\" \"npm run frontend:dev\""
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.3"
   }
 }
