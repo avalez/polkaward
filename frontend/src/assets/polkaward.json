@@ -1,0 +1,751 @@
+{
+  "source": {
+    "hash": "0x91de1bbe9d5117cea82d496b9a80a790b0a2b33d30a6dbd26344407e1b7f74af",
+    "language": "ink! 6.0.0-beta.1",
+    "compiler": "rustc 1.94.1",
+    "build_info": {
+      "build_mode": "Debug",
+      "cargo_contract_version": "6.0.0-beta.1",
+      "rust_toolchain": "stable-aarch64-apple-darwin"
+    }
+  },
+  "contract": {
+    "name": "polkaward",
+    "version": "6.0.0-beta.1",
+    "authors": [
+      "Use Ink <ink@use.ink>"
+    ]
+  },
+  "image": null,
+  "spec": {
+    "constructors": [
+      {
+        "args": [
+          {
+            "label": "provider",
+            "type": {
+              "displayName": [
+                "Address"
+              ],
+              "type": 0
+            }
+          },
+          {
+            "label": "arbitrator",
+            "type": {
+              "displayName": [
+                "Address"
+              ],
+              "type": 0
+            }
+          },
+          {
+            "label": "duration",
+            "type": {
+              "displayName": [
+                "u64"
+              ],
+              "type": 5
+            }
+          }
+        ],
+        "default": false,
+        "docs": [],
+        "label": "new",
+        "payable": true,
+        "returnType": {
+          "displayName": [
+            "ink_primitives",
+            "ConstructorResult"
+          ],
+          "type": 7
+        },
+        "selector": "0x9bae9d5e"
+      }
+    ],
+    "docs": [],
+    "environment": {
+      "accountId": {
+        "displayName": [
+          "AccountId"
+        ],
+        "type": 15
+      },
+      "balance": {
+        "displayName": [
+          "Balance"
+        ],
+        "type": 17
+      },
+      "blockNumber": {
+        "displayName": [
+          "BlockNumber"
+        ],
+        "type": 19
+      },
+      "hash": {
+        "displayName": [
+          "Hash"
+        ],
+        "type": 18
+      },
+      "nativeToEthRatio": 100000000,
+      "poolAssetsPrecompileIndex": 800,
+      "staticBufferSize": 16384,
+      "timestamp": {
+        "displayName": [
+          "Timestamp"
+        ],
+        "type": 5
+      },
+      "trustBackedAssetsPrecompileIndex": 288
+    },
+    "events": [],
+    "lang_error": {
+      "displayName": [
+        "ink",
+        "LangError"
+      ],
+      "type": 9
+    },
+    "messages": [
+      {
+        "args": [],
+        "default": false,
+        "docs": [
+          " Confirms the off-chain work event and starts the escrow deadline.",
+          " The arbitrator is expected to be the account used by the GitHub webhook service."
+        ],
+        "label": "complete_work",
+        "mutates": true,
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink",
+            "MessageResult"
+          ],
+          "type": 10
+        },
+        "selector": "0xa79ee65b"
+      },
+      {
+        "args": [],
+        "default": false,
+        "docs": [
+          " RELEASE PAYMENT",
+          " Called by the Client to pay the Provider, or by the Arbitrator to settle a dispute in favor of the Provider."
+        ],
+        "label": "release_payment",
+        "mutates": true,
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink",
+            "MessageResult"
+          ],
+          "type": 10
+        },
+        "selector": "0x4d698c96"
+      },
+      {
+        "args": [],
+        "default": false,
+        "docs": [
+          " 2. REFUND CLIENT",
+          " Called by the Client after the deadline, or by the Arbitrator to settle a dispute in favor of the Client."
+        ],
+        "label": "refund_client",
+        "mutates": true,
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink",
+            "MessageResult"
+          ],
+          "type": 10
+        },
+        "selector": "0x928877fc"
+      },
+      {
+        "args": [],
+        "default": false,
+        "docs": [
+          " 3. TRIGGER DISPUTE",
+          " Can be triggered by either the client or the provider if negotiations break down.",
+          " This freezes normal operations and passes absolute judgment control to the arbitrator."
+        ],
+        "label": "raise_dispute",
+        "mutates": true,
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink",
+            "MessageResult"
+          ],
+          "type": 10
+        },
+        "selector": "0x973c7100"
+      },
+      {
+        "args": [],
+        "default": false,
+        "docs": [],
+        "label": "get_state",
+        "mutates": false,
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink",
+            "MessageResult"
+          ],
+          "type": 13
+        },
+        "selector": "0x3d1e8968"
+      }
+    ]
+  },
+  "storage": {
+    "root": {
+      "layout": {
+        "struct": {
+          "fields": [
+            {
+              "layout": {
+                "leaf": {
+                  "key": "0x00000000",
+                  "ty": 0
+                }
+              },
+              "name": "client"
+            },
+            {
+              "layout": {
+                "leaf": {
+                  "key": "0x00000000",
+                  "ty": 0
+                }
+              },
+              "name": "provider"
+            },
+            {
+              "layout": {
+                "leaf": {
+                  "key": "0x00000000",
+                  "ty": 0
+                }
+              },
+              "name": "arbitrator"
+            },
+            {
+              "layout": {
+                "leaf": {
+                  "key": "0x00000000",
+                  "ty": 3
+                }
+              },
+              "name": "amount"
+            },
+            {
+              "layout": {
+                "leaf": {
+                  "key": "0x00000000",
+                  "ty": 5
+                }
+              },
+              "name": "duration"
+            },
+            {
+              "layout": {
+                "leaf": {
+                  "key": "0x00000000",
+                  "ty": 5
+                }
+              },
+              "name": "expiry"
+            },
+            {
+              "layout": {
+                "leaf": {
+                  "key": "0x00000000",
+                  "ty": 2
+                }
+              },
+              "name": "state"
+            }
+          ],
+          "name": "Escrow"
+        }
+      },
+      "root_key": "0x00000000",
+      "ty": 6
+    }
+  },
+  "types": [
+    {
+      "id": 0,
+      "type": {
+        "def": {
+          "composite": {
+            "fields": [
+              {
+                "type": 1,
+                "typeName": "[u8; 20]"
+              }
+            ]
+          }
+        },
+        "path": [
+          "primitive_types",
+          "H160"
+        ]
+      }
+    },
+    {
+      "id": 1,
+      "type": {
+        "def": {
+          "array": {
+            "len": 20,
+            "type": 2
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": {
+        "def": {
+          "primitive": "u8"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": {
+        "def": {
+          "composite": {
+            "fields": [
+              {
+                "type": 4,
+                "typeName": "[u64; 4]"
+              }
+            ]
+          }
+        },
+        "path": [
+          "primitive_types",
+          "U256"
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "type": {
+        "def": {
+          "array": {
+            "len": 4,
+            "type": 5
+          }
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": {
+        "def": {
+          "primitive": "u64"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": {
+        "def": {
+          "composite": {
+            "fields": [
+              {
+                "name": "client",
+                "type": 0,
+                "typeName": "<Address as::ink::storage::traits::AutoStorableHint<::ink::\nstorage::traits::ManualKey<678703735u32, ()>,>>::Type"
+              },
+              {
+                "name": "provider",
+                "type": 0,
+                "typeName": "<Address as::ink::storage::traits::AutoStorableHint<::ink::\nstorage::traits::ManualKey<1832608530u32, ()>,>>::Type"
+              },
+              {
+                "name": "arbitrator",
+                "type": 0,
+                "typeName": "<Address as::ink::storage::traits::AutoStorableHint<::ink::\nstorage::traits::ManualKey<3230041246u32, ()>,>>::Type"
+              },
+              {
+                "name": "amount",
+                "type": 3,
+                "typeName": "<U256 as::ink::storage::traits::AutoStorableHint<::ink::storage\n::traits::ManualKey<1673941379u32, ()>,>>::Type"
+              },
+              {
+                "name": "duration",
+                "type": 5,
+                "typeName": "<u64 as::ink::storage::traits::AutoStorableHint<::ink::storage\n::traits::ManualKey<1480839155u32, ()>,>>::Type"
+              },
+              {
+                "name": "expiry",
+                "type": 5,
+                "typeName": "<u64 as::ink::storage::traits::AutoStorableHint<::ink::storage\n::traits::ManualKey<982599494u32, ()>,>>::Type"
+              },
+              {
+                "name": "state",
+                "type": 2,
+                "typeName": "<u8 as::ink::storage::traits::AutoStorableHint<::ink::storage::\ntraits::ManualKey<2168460026u32, ()>,>>::Type"
+              }
+            ]
+          }
+        },
+        "path": [
+          "polkaward",
+          "escrow",
+          "Escrow"
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "fields": [
+                  {
+                    "type": 8
+                  }
+                ],
+                "index": 0,
+                "name": "Ok"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 9
+                  }
+                ],
+                "index": 1,
+                "name": "Err"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 8
+          },
+          {
+            "name": "E",
+            "type": 9
+          }
+        ],
+        "path": [
+          "Result"
+        ]
+      }
+    },
+    {
+      "id": 8,
+      "type": {
+        "def": {
+          "tuple": []
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "index": 1,
+                "name": "CouldNotReadInput"
+              }
+            ]
+          }
+        },
+        "path": [
+          "ink_primitives",
+          "LangError"
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "fields": [
+                  {
+                    "type": 11
+                  }
+                ],
+                "index": 0,
+                "name": "Ok"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 9
+                  }
+                ],
+                "index": 1,
+                "name": "Err"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 11
+          },
+          {
+            "name": "E",
+            "type": 9
+          }
+        ],
+        "path": [
+          "Result"
+        ]
+      }
+    },
+    {
+      "id": 11,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "fields": [
+                  {
+                    "type": 8
+                  }
+                ],
+                "index": 0,
+                "name": "Ok"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 12
+                  }
+                ],
+                "index": 1,
+                "name": "Err"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 8
+          },
+          {
+            "name": "E",
+            "type": 12
+          }
+        ],
+        "path": [
+          "Result"
+        ]
+      }
+    },
+    {
+      "id": 12,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "index": 0,
+                "name": "Unauthorized"
+              },
+              {
+                "index": 1,
+                "name": "InvalidState"
+              },
+              {
+                "index": 2,
+                "name": "DeadlineNotPassed"
+              },
+              {
+                "index": 3,
+                "name": "DeadlinePassed"
+              },
+              {
+                "index": 4,
+                "name": "TransferFailed"
+              },
+              {
+                "index": 5,
+                "name": "ZeroDeposit"
+              }
+            ]
+          }
+        },
+        "path": [
+          "polkaward",
+          "escrow",
+          "Error"
+        ]
+      }
+    },
+    {
+      "id": 13,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "fields": [
+                  {
+                    "type": 14
+                  }
+                ],
+                "index": 0,
+                "name": "Ok"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 9
+                  }
+                ],
+                "index": 1,
+                "name": "Err"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 14
+          },
+          {
+            "name": "E",
+            "type": 9
+          }
+        ],
+        "path": [
+          "Result"
+        ]
+      }
+    },
+    {
+      "id": 14,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "index": 0,
+                "name": "PendingWork"
+              },
+              {
+                "index": 1,
+                "name": "AwaitingApproval"
+              },
+              {
+                "index": 2,
+                "name": "Disputed"
+              },
+              {
+                "index": 3,
+                "name": "Completed"
+              },
+              {
+                "index": 4,
+                "name": "Refunded"
+              }
+            ]
+          }
+        },
+        "path": [
+          "polkaward",
+          "escrow",
+          "EscrowState"
+        ]
+      }
+    },
+    {
+      "id": 15,
+      "type": {
+        "def": {
+          "composite": {
+            "fields": [
+              {
+                "type": 16,
+                "typeName": "[u8; 32]"
+              }
+            ]
+          }
+        },
+        "path": [
+          "ink_primitives",
+          "types",
+          "AccountId"
+        ]
+      }
+    },
+    {
+      "id": 16,
+      "type": {
+        "def": {
+          "array": {
+            "len": 32,
+            "type": 2
+          }
+        }
+      }
+    },
+    {
+      "id": 17,
+      "type": {
+        "def": {
+          "primitive": "u128"
+        }
+      }
+    },
+    {
+      "id": 18,
+      "type": {
+        "def": {
+          "composite": {
+            "fields": [
+              {
+                "type": 16,
+                "typeName": "[u8; 32]"
+              }
+            ]
+          }
+        },
+        "path": [
+          "ink_primitives",
+          "types",
+          "Hash"
+        ]
+      }
+    },
+    {
+      "id": 19,
+      "type": {
+        "def": {
+          "primitive": "u32"
+        }
+      }
+    }
+  ],
+  "version": 6
+}
