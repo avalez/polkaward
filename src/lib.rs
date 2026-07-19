@@ -3,6 +3,7 @@
 #[ink::contract]
 mod escrow {
     use ink::primitives::U256;
+    use ink::primitives::H160;
 
     #[derive(Clone, Copy, PartialEq, Eq, Debug)]
     #[ink::scale_derive(Encode, Decode, TypeInfo)]
@@ -33,6 +34,7 @@ mod escrow {
     #[ink::scale_derive(Encode, Decode, TypeInfo)]
     pub enum Error {
         Unauthorized,
+        AddressMismatch { caller: H160, expected: H160 },
         InvalidState,
         DeadlineNotPassed,
         DeadlinePassed,
@@ -73,7 +75,10 @@ mod escrow {
         #[ink(message)]
         pub fn complete_work(&mut self) -> Result<(), Error> {
             if self.env().caller() != self.arbitrator {
-                return Err(Error::Unauthorized);
+                return Err(Error::AddressMismatch {
+                    caller: self.env().caller(),
+                    expected: self.arbitrator,
+                });
             }
             if EscrowState::from_u8(self.state) != EscrowState::PendingWork {
                 return Err(Error::InvalidState);

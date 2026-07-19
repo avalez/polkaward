@@ -240,10 +240,14 @@ async function init() {
 
     signer = keyring.addFromUri(mnemonic);
 
+    console.log(`Substrate Address: ${signer.address}`);
+
     signerAddress = (await api.call.reviveApi.address(signer.address)).toString();
     const originalAccount = await api.query.revive.originalAccount(signerAddress);
 
     if (originalAccount.isNone) {
+        console.log("Sending mapping transaction... (A small SOL/DOT rent deposit will be reserved)");
+
         await signAndSend(api.tx.revive.mapAccount());
         signerAddress = (await api.call.reviveApi.address(signer.address)).toString();
     }
