@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { ApiPromise, WsProvider } = require("@polkadot/api");
-const { ContractPromise } = require("@polkadot/api-contract");
+const { CodePromise, ContractPromise } = require("@polkadot/api-contract");
 const { Keyring } = require("@polkadot/keyring");
 
 const projectRoot = path.resolve(__dirname, "../..");
@@ -180,7 +180,34 @@ function resolveContractMethod(methodName, kind) {
     return null;
 }
 
-async function signAndSend(tx) {
+function extractContractAddress(result) {
+    const directAddress = result.contract?.address?.toString?.();
+    if (directAddress) {
+        return directAddress;
+    }
+
+    for (const record of result.events ?? []) {
+        const event = record.event;
+        if (!event || (event.section !== "contracts" && event.section !== "revive")) {
+            continue;
+        }
+
+        if (event.method !== "Instantiated") {
+            continue;
+        }
+
+        const contractId = event.data?.[1] ?? event.data?.[0];
+        const address = contractId?.toString?.();
+
+        if (address) {
+            return address;
+        }
+    }
+
+    return null;
+}
+
+async function signAndSend(tx, { extractAddress = false } = {}) {
     return new Promise((resolve, reject) => {
         let unsubscribe;
 
@@ -201,7 +228,16 @@ async function signAndSend(tx) {
                     unsubscribe();
                 }
 
-                resolve(status.asInBlock.toHex());
+                const blockHash = status.asInBlock.toHex();
+                if (extractAddress) {
+                    resolve({
+                        blockHash,
+                        contractAddress: extractContractAddress(result)
+                    });
+                    return;
+                }
+
+                resolve(blockHash);
             }
         }).then((unsub) => {
             unsubscribe = unsub;
@@ -306,16 +342,22 @@ async function sendMessage(methodName, args = [], options = {}) {
         throw new Error(`Unsupported contract transaction method: ${methodName}`);
     }
 
-    let gasRequired = getQueryGasLimit();
-
     const queryMethod = resolveContractMethod(methodName, "query");
     if (queryMethod) {
-        ({ gasRequired } = await queryMessage(methodName, args, options));
+        // Run query to ensure it doesn't revert, but discard the gasRequired.
+        await queryMessage(methodName, args, options);
     }
+
+    // Use 80% of the max block weight to avoid exhausting block limits
+    let maxWeight = getQueryGasLimit();
+    let gasLimit = api.registry.createType("Weight", {
+        refTime: (BigInt(maxWeight.refTime.toString()) * 8n) / 10n,
+        proofSize: (BigInt(maxWeight.proofSize.toString()) * 8n) / 10n
+    });
 
     const tx = txMethod(
         {
-            gasLimit: gasRequired,
+            gasLimit: gasLimit,
             ...options
         },
         ...args
@@ -324,10 +366,42 @@ async function sendMessage(methodName, args = [], options = {}) {
     return signAndSend(tx);
 }
 
-async function createEscrow(provider, arbitrator, duration, value) {
-    return sendMessage("new", [provider, arbitrator, duration], {
-        value
+async function createEscrow(provider, arbitrator, duration, value = "10000000000000") {
+    const code = new CodePromise(
+        api,
+        contractMetadata,
+        contractMetadata.source.contract_binary
+    );
+
+    let maxWeight = getQueryGasLimit();
+    let gasLimit = api.registry.createType("Weight", {
+        refTime: (BigInt(maxWeight.refTime.toString()) * 8n) / 10n,
+        proofSize: (BigInt(maxWeight.proofSize.toString()) * 8n) / 10n
     });
+
+    const tx = code.tx.new(
+        {
+            gasLimit,
+            storageDepositLimit: (1n << 128n) - 1n,
+            value
+        },
+        provider,
+        arbitrator,
+        duration
+    );
+
+    const { blockHash, contractAddress } = await signAndSend(tx, { extractAddress: true });
+
+    if (!contractAddress) {
+        throw new Error("Escrow deployment succeeded but no contract address was found in events");
+    }
+
+    setContractAddress(contractAddress);
+
+    return {
+        blockHash,
+        contractAddress
+    };
 }
 
 async function releasePayment() {
