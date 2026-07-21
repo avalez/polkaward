@@ -4,11 +4,13 @@ const path = require("path");
 const { ApiPromise, WsProvider } = require("@polkadot/api");
 const { CodePromise, ContractPromise } = require("@polkadot/api-contract");
 const { Keyring } = require("@polkadot/keyring");
+const { Abi } = require('@polkadot/api-contract');
 
 const projectRoot = path.resolve(__dirname, "../..");
 
 let api;
 let contract;
+let arbitratorAddress;
 let contractMetadata;
 let signer;
 let signerAddress;
@@ -279,7 +281,9 @@ async function init() {
     console.log(`Substrate Address: ${signer.address}`);
 
     signerAddress = (await api.call.reviveApi.address(signer.address)).toString();
+    console.log(`Signer Address: ${signerAddress}`);
     const originalAccount = await api.query.revive.originalAccount(signerAddress);
+    console.log(`originalAccount: ${originalAccount}`);
 
     if (originalAccount.isNone) {
         console.log("Sending mapping transaction... (A small SOL/DOT rent deposit will be reserved)");
@@ -289,12 +293,13 @@ async function init() {
     }
 }
 
-function setContractAddress(contractAddress) {
+function setContractAddress(contractAddress, arbitrator) {
     if (!api || !contractMetadata) {
         throw new Error("Contract service is not initialized");
     }
-
+    console.log(`new contractAddress: ${contractAddress}`);
     contract = new ContractPromise(api, contractMetadata, contractAddress);
+    arbitratorAddress = arbitrator;
 }
 
 async function queryMessage(methodName, args = [], options = {}) {
@@ -333,6 +338,84 @@ async function queryMessage(methodName, args = [], options = {}) {
 
 async function getSignerAddress() {
     return signerAddress;
+}
+
+const metadata = JSON.parse(fs.readFileSync('./target/ink/polkaward.json', 'utf8'));
+const abi = new Abi(metadata);
+
+async function callReviveDirectly(methodName) {
+    const provider = new WsProvider('ws://127.0.0.1:9944');
+    const api = await ApiPromise.create({ provider });
+    const keyring = new Keyring({ type: 'sr25519' });
+    const signer = keyring.addFromUri('//Alice');
+
+    // 2. Extract the 4-byte selector from the ABI
+    const message = abi.messages.find(m => m.identifier === methodName);
+    const selectorHex = message.selector.toHex(); // e.g., '0x73d3a042'
+
+    // 3. Construct raw input data manually
+    // Strip '0x' from the H160 argument so it concatenates directly behind the selector
+    const rawH160Hex = arbitratorAddress.startsWith('0x') ? arbitratorAddress.slice(2) : arbitratorAddress;
+    const inputData = `${selectorHex}${rawH160Hex}`;
+
+    console.log(`Raw Payload (No JS wrapper bytes): ${inputData}`);
+
+    // -------------------------------------------------------------
+    // A. DRY-RUN / QUERY (Read-Only)
+    // -------------------------------------------------------------
+
+    console.log("Dry run contract:", contract.address.toString());
+    const dryRunResult = await api.call.reviveApi.call(
+        signer.address,   // origin (20-byte H160)
+        contract.address, // dest (20-byte H160)
+        0,                // value
+        null,             // weight limit (null = auto)
+        null,             // storage deposit limit
+        inputData         // Manual byte payload
+    );
+
+    // 2. Check if the VM flagged a Revert (bit 0 = 1)
+    const flags = dryRunResult.result.asOk.get('flags').get('bits').toNumber();
+    const isReverted = (flags & 1) !== 0;
+
+    if (isReverted) {
+        const rawData = dryRunResult.result.asOk.data.toHex();
+        
+        // Decode the return bytes against your contract ABI
+        const message = abi.messages.find(m => m.identifier === methodName);
+        console.log(message.toU8a())
+        const decoded = message.decodeOutput(rawData);
+        
+        console.error("❌ Contract Reverted On-Chain!");
+        console.error("Reason:", JSON.stringify(decoded.output.toHuman(), null, 2));
+        process.exit(1);
+    }
+ 
+    console.log("Dry run success! Estimated weight:", dryRunResult.gasConsumed.toString());
+
+    // -------------------------------------------------------------
+    // B. ON-CHAIN TRANSACTION
+    // -------------------------------------------------------------
+    return new Promise((resolve, reject) => {
+        api.tx.revive.call(
+            contract.address,
+            0,                          // value
+            dryRunResult.gasRequired,                // gas limit from dry run
+            dryRunResult.storageDeposit.asCharge,    // storage deposit limit
+            inputData                   // raw byte payload
+        ).signAndSend(signer, ({ status, dispatchError, txHash }) => {
+            if (status.isInBlock || status.isFinalized) {
+                if (dispatchError) {
+                    reject(new Error(`Tx Failed: ${dispatchError.toString()}`));
+                } else {
+                    // Resolve with the transaction hash once mined in a block!
+                    resolve(txHash.toHex());
+                }
+            } else if (status.isError) {
+                reject(new Error('Transaction execution error'));
+            }
+        }).catch(reject);
+    });
 }
 
 async function sendMessage(methodName, args = [], options = {}) {
@@ -396,7 +479,7 @@ async function createEscrow(provider, arbitrator, duration, value = "10000000000
         throw new Error("Escrow deployment succeeded but no contract address was found in events");
     }
 
-    setContractAddress(contractAddress);
+    setContractAddress(contractAddress, arbitrator);
 
     return {
         blockHash,
@@ -409,7 +492,7 @@ async function releasePayment() {
 }
 
 async function completeWork() {
-    return sendMessage("complete_work");
+    return callReviveDirectly("complete_work");
 }
 
 async function refundClient() {
