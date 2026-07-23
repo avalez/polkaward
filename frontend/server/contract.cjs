@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+//const crypto = require("crypto")
 
 const { ApiPromise, WsProvider } = require("@polkadot/api");
 const { CodePromise, ContractPromise } = require("@polkadot/api-contract");
@@ -209,7 +210,7 @@ function extractContractAddress(result) {
     return null;
 }
 
-async function signAndSend(tx, { extractAddress = false } = {}) {
+async function signAndSend(tx, options = { extractAddress: false, waitForFinalized: false }) {
     return new Promise((resolve, reject) => {
         let unsubscribe;
 
@@ -225,13 +226,16 @@ async function signAndSend(tx, { extractAddress = false } = {}) {
                 return;
             }
 
-            if (status.isInBlock) {
+            const isDone = options.waitForFinalized ? status.isFinalized : status.isInBlock;
+            console.log('isDone', isDone);
+
+            if (isDone) {
                 if (unsubscribe) {
                     unsubscribe();
                 }
 
                 const blockHash = status.asInBlock.toHex();
-                if (extractAddress) {
+                if (options.extractAddress) {
                     resolve({
                         blockHash,
                         contractAddress: extractContractAddress(result)
@@ -380,40 +384,40 @@ async function callReviveDirectly(methodName) {
 
     if (isReverted) {
         const rawData = dryRunResult.result.asOk.data.toHex();
-        
+
         // Decode the return bytes against your contract ABI
         const message = abi.messages.find(m => m.identifier === methodName);
-        console.log(message.toU8a())
-        const decoded = message.decodeOutput(rawData);
-        
-        console.error("❌ Contract Reverted On-Chain!");
-        console.error("Reason:", JSON.stringify(decoded.output.toHuman(), null, 2));
+
+        abi.registry.register({
+            InkPrimitivesLangError: {
+                _enum: ['CouldNotReadInput']
+            }
+        });
+
+        const returnType = message.returnType && message.returnType.type;
+        if (!returnType) throw new Error('ABI message has no return type');
+        decoded = contract.abi.registry.createTypeUnsafe(returnType, [rawData]);
+
+        console.log('❌ Contract Reverted On-Chain!', JSON.stringify(decoded.toHuman().Ok.Err));
+
         process.exit(1);
     }
- 
+
     console.log("Dry run success! Estimated weight:", dryRunResult.gasConsumed.toString());
 
     // -------------------------------------------------------------
     // B. ON-CHAIN TRANSACTION
     // -------------------------------------------------------------
     return new Promise((resolve, reject) => {
-        api.tx.revive.call(
+        const tx = api.tx.revive.call(
             contract.address,
             0,                          // value
             dryRunResult.gasRequired,                // gas limit from dry run
             dryRunResult.storageDeposit.asCharge,    // storage deposit limit
             inputData                   // raw byte payload
-        ).signAndSend(signer, ({ status, dispatchError, txHash }) => {
-            if (status.isInBlock || status.isFinalized) {
-                if (dispatchError) {
-                    reject(new Error(`Tx Failed: ${dispatchError.toString()}`));
-                } else {
-                    // Resolve with the transaction hash once mined in a block!
-                    resolve(txHash.toHex());
-                }
-            } else if (status.isError) {
-                reject(new Error('Transaction execution error'));
-            }
+        );
+        return signAndSend(tx, signer, { waitForFinalized: true }).then(({ txHash, blockHash, events }) => {
+            resolve(txHash);
         }).catch(reject);
     });
 }
@@ -462,6 +466,29 @@ async function createEscrow(provider, arbitrator, duration, value = "10000000000
         proofSize: (BigInt(maxWeight.proofSize.toString()) * 8n) / 10n
     });
 
+    // // 1. Selector for `new` constructor (4 bytes)
+    // const constructorSelector = abi.constructors.find(c => c.identifier === 'new').selector.toHex();
+
+    // const timeoutHex = '100e0000'; // 3600
+    // // 2. Extract WASM bytecode (handles both old and new ink! field names)
+    // const wasmBytecodeHex = contractMetadata.source.wasm || contractMetadata.source.code;
+    // const constructorArgs = `${constructorSelector}${arbitrator}${provider}${timeoutHex}`;
+    // // 3. Append arguments directly to the WASM code blob
+    // // wasmBytecodeHex starts with '0x', so constructorArgs gets tacked onto the end
+    // const fullCodeBlob = `${wasmBytecodeHex}${constructorArgs}`;
+    // const randomSalt = '0x' + crypto.randomBytes(32).toString('hex');
+
+    // 3. Deploy
+    // const tx = api.tx.revive.instantiateWithCode(
+    //     0,                     // value
+    //     gasLimit,
+    //     (1n << 128n) - 1n,     // storageDepositLimit, 
+    //     fullCodeBlob,          // Code + Constructor Args combined!
+    //     '0x',                  // data MUST be '0x' (empty)
+    //     randomSalt             // salt
+    // );
+
+
     const tx = code.tx.new(
         {
             gasLimit,
@@ -474,17 +501,53 @@ async function createEscrow(provider, arbitrator, duration, value = "10000000000
     );
 
     const { blockHash, contractAddress } = await signAndSend(tx, { extractAddress: true });
+    // const { blockHash, contractAddress } = await new Promise((resolve, reject) => {
+    //     tx.signAndSend(signer, ({ status, events = [], dispatchError }) => {
+    //         // Wait until the transaction is included in a block
+    //         if (status.isInBlock || status.isFinalized) {
 
-    if (!contractAddress) {
-        throw new Error("Escrow deployment succeeded but no contract address was found in events");
-    }
+    //             // 1. Handle runtime errors
+    //             if (dispatchError) {
+    //                 if (dispatchError.isModule) {
+    //                     const decoded = api.registry.findMetaError(dispatchError.asModule);
+    //                     return reject(new Error(`Instantiation Failed: ${decoded.section}.${decoded.name}`));
+    //                 }
+    //                 return reject(new Error(`Instantiation Failed: ${dispatchError.toString()}`));
+    //             }
 
-    setContractAddress(contractAddress, arbitrator);
+    //             // 2. Parse events to find the newly instantiated contract address
+    //             let contractAddress = null;
 
-    return {
-        blockHash,
-        contractAddress
-    };
+    //             for (const { event } of events) {
+    //                 const isReviveInstantiated = 
+    //                     api.events.revive?.Instantiated?.is(event) ||
+    //                     (event.section === 'revive' && event.method === 'Instantiated') ||
+    //                     (event.section === 'contracts' && event.method === 'Instantiated');
+
+    //                 if (isReviveInstantiated) {
+    //                     // event.data structure: [deployerAddress, contractAddress]
+    //                     contractAddress = event.data[1].toString();
+    //                     break;
+    //                 }
+    //             }
+
+    //             if (!contractAddress) {
+    //                 console.warn("⚠️ Transaction succeeded, but no Instantiated event was found in events.");
+    //             } else {
+    //                 setContractAddress(contractAddress, arbitrator);
+    //             }
+
+    //             // 3. Resolve with blockHash and contractAddress
+    //             resolve({
+    //                 blockHash: (status.isInBlock 
+    //                     ? status.asInBlock 
+    //                     : status.asFinalized).toHex(),
+    //                 contractAddress
+    //             });
+    //         }
+    //     }).catch(reject);
+    // });
+    return { blockHash, contractAddress };
 }
 
 async function releasePayment() {
@@ -492,7 +555,7 @@ async function releasePayment() {
 }
 
 async function completeWork() {
-    return callReviveDirectly("complete_work");
+    return sendMessage("complete_work");
 }
 
 async function refundClient() {

@@ -181,6 +181,11 @@ mod escrow {
         pub fn get_state(&self) -> EscrowState {
             EscrowState::from_u8(self.state)
         }
+
+        #[ink(message)]
+        pub fn get_arbitrator(&self) -> Address {
+            self.arbitrator
+        }
     }
 
     #[cfg(test)]
