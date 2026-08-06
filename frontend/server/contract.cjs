@@ -1,36 +1,27 @@
 const fs = require("fs");
 const path = require("path");
-//const crypto = require("crypto")
 
 const { ApiPromise, WsProvider } = require("@polkadot/api");
-const { CodePromise, ContractPromise } = require("@polkadot/api-contract");
 const { Keyring } = require("@polkadot/keyring");
 const { Abi } = require('@polkadot/api-contract');
 
 const projectRoot = path.resolve(__dirname, "../..");
 
 let api;
-let contract;
+let contractAddress;
 let arbitratorAddress;
 let contractMetadata;
+let abi;
 let signer;
 let signerAddress;
 
 function resolveProjectPath(filePath) {
-    if (!filePath) {
-        return filePath;
-    }
-
     return path.isAbsolute(filePath) ? filePath : path.resolve(projectRoot, filePath);
 }
 
 function requireEnv(name, fallbackValue) {
     const value = process.env[name] || fallbackValue;
-
-    if (!value) {
-        throw new Error(`Missing required environment variable ${name}. Copy env.sample to .env and set ${name}.`);
-    }
-
+    if (!value) throw new Error(`Missing required environment variable ${name}`);
     return value;
 }
 
@@ -39,222 +30,67 @@ function formatDispatchError(dispatchError) {
         const decoded = api.registry.findMetaError(dispatchError.asModule);
         return `${decoded.section}.${decoded.name}: ${decoded.docs.join(" ")}`;
     }
-
     return dispatchError.toString();
 }
 
 function isDispatchError(dispatchError, section, name) {
-    if (!dispatchError.isModule) {
-        return false;
-    }
-
+    if (!dispatchError.isModule) return false;
     const decoded = api.registry.findMetaError(dispatchError.asModule);
     return decoded.section === section && decoded.name === name;
 }
 
-function getQueryGasLimit() {
-    const maxExtrinsic = api.consts.system.blockWeights.perClass.normal.maxExtrinsic;
-    const maxBlock = api.consts.system.blockWeights.maxBlock;
-    const maxWeight = maxExtrinsic.isSome ? maxExtrinsic.unwrap() : maxBlock;
-
-    return api.registry.createType("Weight", {
-        refTime: maxWeight.refTime,
-        proofSize: maxWeight.proofSize
-    });
+// SCALE encodes a u64 into 8 bytes little-endian hex
+function encodeU64(value) {
+    const buffer = Buffer.alloc(8);
+    buffer.writeBigUInt64LE(BigInt(value));
+    return buffer.toString('hex');
 }
 
-function normalizeContractOutput(output) {
-    if (!output) {
-        return "Unknown";
-    }
-
-    const candidates = [];
-    const direct = output;
-
-    if (typeof direct.toHuman === "function") {
-        candidates.push(direct.toHuman());
-    }
-
-    if (typeof direct.toJSON === "function") {
-        candidates.push(direct.toJSON());
-    }
-
-    candidates.push(direct);
-
-    for (const candidate of candidates) {
-        if (typeof candidate === "string") {
-            return candidate;
-        }
-
-        if (typeof candidate === "number" || typeof candidate === "boolean") {
-            return String(candidate);
-        }
-
-        if (candidate && typeof candidate === "object") {
-            const values = [candidate.ok, candidate.Ok, candidate.value, candidate.Value, candidate.result, candidate.Result];
-
-            for (const value of values) {
-                if (typeof value === "string") {
-                    return value;
-                }
-
-                if (value && typeof value === "object") {
-                    const nestedValues = [value.ok, value.Ok, value.value, value.Value];
-
-                    for (const nestedValue of nestedValues) {
-                        if (typeof nestedValue === "string") {
-                            return nestedValue;
-                        }
-                    }
-
-                    if (typeof value === "object") {
-                        const keys = Object.keys(value);
-                        if (keys.length === 1) {
-                            const [firstKey] = keys;
-                            const nested = value[firstKey];
-                            if (typeof nested === "string") {
-                                return nested;
-                            }
-                        }
-                    }
-                }
-            }
-
-            const keys = Object.keys(candidate);
-            if (keys.length === 1) {
-                const [firstKey] = keys;
-                const nested = candidate[firstKey];
-                if (typeof nested === "string") {
-                    return nested;
-                }
-            }
-        }
-    }
-
-    return "Unknown";
-}
-
-function findContractError(value) {
-    if (!value || typeof value !== "object") {
-        return null;
-    }
-
-    for (const [key, nested] of Object.entries(value)) {
-        if (key.toLowerCase() === "err") {
-            return typeof nested === "string" ? nested : JSON.stringify(nested);
-        }
-
-        const found = findContractError(nested);
-        if (found) {
-            return found;
-        }
-    }
-
-    return null;
-}
-
-function resolveContractMethod(methodName, kind) {
-    if (!contract || !contract[kind] || typeof contract[kind] !== "object") {
-        return null;
-    }
-
-    if (typeof contract[kind][methodName] === "function") {
-        return contract[kind][methodName];
-    }
-
-    const candidates = [];
-    const camelCase = methodName.replace(/_([a-z])/g, (_, char) => char.toUpperCase());
-    const snakeCase = methodName.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
-
-    if (camelCase !== methodName) {
-        candidates.push(camelCase);
-    }
-
-    if (snakeCase !== methodName) {
-        candidates.push(snakeCase);
-    }
-
-    for (const candidate of candidates) {
-        if (typeof contract[kind][candidate] === "function") {
-            return contract[kind][candidate];
-        }
-    }
-
-    return null;
-}
-
-function extractContractAddress(result) {
-    const directAddress = result.contract?.address?.toString?.();
-    if (directAddress) {
-        return directAddress;
-    }
-
-    for (const record of result.events ?? []) {
-        const event = record.event;
-        if (!event || (event.section !== "contracts" && event.section !== "revive")) {
-            continue;
-        }
-
-        if (event.method !== "Instantiated") {
-            continue;
-        }
-
-        const contractId = event.data?.[1] ?? event.data?.[0];
-        const address = contractId?.toString?.();
-
-        if (address) {
-            return address;
-        }
-    }
-
-    return null;
+// Ensure address is 20-bytes (H160) for SCALE encoding in pallet-revive
+function encodeAccountId(address) {
+    return address.startsWith('0x') ? address.slice(2) : address;
 }
 
 async function signAndSend(tx, options = { extractAddress: false, waitForFinalized: false }) {
     return new Promise((resolve, reject) => {
         let unsubscribe;
-
         tx.signAndSend(signer, (result) => {
-            const { status, dispatchError } = result;
+            const { status, dispatchError, events } = result;
 
             if (dispatchError) {
-                if (unsubscribe) {
-                    unsubscribe();
-                }
-
-                reject(new Error(formatDispatchError(dispatchError)));
-                return;
+                if (unsubscribe) unsubscribe();
+                return reject(new Error(formatDispatchError(dispatchError)));
             }
 
             const isDone = options.waitForFinalized ? status.isFinalized : status.isInBlock;
-            console.log('isDone', isDone);
 
             if (isDone) {
-                if (unsubscribe) {
-                    unsubscribe();
-                }
+                if (unsubscribe) unsubscribe();
+                const blockHash = status.isInBlock ? status.asInBlock.toHex() : status.asFinalized.toHex();
 
-                const blockHash = status.asInBlock.toHex();
                 if (options.extractAddress) {
-                    resolve({
-                        blockHash,
-                        contractAddress: extractContractAddress(result)
-                    });
-                    return;
+                    let addr = null;
+                    for (const { event } of events) {
+                        const isInstantiated =
+                            (event.section === 'revive' && event.method === 'Instantiated') ||
+                            (event.section === 'contracts' && event.method === 'Instantiated');
+                        if (isInstantiated) {
+                            addr = event.data[1].toString(); // [deployer, contract]
+                            break;
+                        }
+                    }
+                    return resolve({ blockHash, contractAddress: addr });
                 }
-
                 resolve(blockHash);
             }
-        }).then((unsub) => {
-            unsubscribe = unsub;
-        }).catch(reject);
+        }).then(unsub => unsubscribe = unsub).catch(reject);
     });
 }
 
 async function init() {
     const wsProvider = requireEnv("WS_PROVIDER", "ws://127.0.0.1:9944");
     const metadataFile = requireEnv("METADATA", "target/ink/polkaward.contract");
-    const contractAddress = requireEnv("CONTRACT", "0x48550a4bb374727186c55365b7c9c0a1a31bdafe");
+    contractAddress = requireEnv("CONTRACT", "0x48550a4bb374727186c55365b7c9c0a1a31bdafe");
     const mnemonic = requireEnv("MNEMONIC", "//Alice");
 
     api = await ApiPromise.create({
@@ -263,23 +99,14 @@ async function init() {
     });
 
     const metadataPath = resolveProjectPath(metadataFile);
-
     if (!fs.existsSync(metadataPath)) {
-        throw new Error(`Contract metadata file not found: ${metadataPath}. Run cargo contract build or update METADATA in your env file.`);
+        throw new Error(`Contract metadata file not found: ${metadataPath}`);
     }
 
     contractMetadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
+    abi = new Abi(contractMetadata);
 
-    contract = new ContractPromise(
-        api,
-        contractMetadata,
-        contractAddress
-    );
-
-    const keyring = new Keyring({
-        type: "sr25519"
-    });
-
+    const keyring = new Keyring({ type: "sr25519" });
     signer = keyring.addFromUri(mnemonic);
 
     console.log(`Substrate Address: ${signer.address}`);
@@ -287,310 +114,181 @@ async function init() {
     signerAddress = (await api.call.reviveApi.address(signer.address)).toString();
     console.log(`Signer Address: ${signerAddress}`);
     const originalAccount = await api.query.revive.originalAccount(signerAddress);
-    console.log(`originalAccount: ${originalAccount}`);
 
     if (originalAccount.isNone) {
-        console.log("Sending mapping transaction... (A small SOL/DOT rent deposit will be reserved)");
-
+        console.log("Sending mapping transaction...");
         await signAndSend(api.tx.revive.mapAccount());
         signerAddress = (await api.call.reviveApi.address(signer.address)).toString();
     }
 }
 
-function setContractAddress(contractAddress, arbitrator) {
-    if (!api || !contractMetadata) {
-        throw new Error("Contract service is not initialized");
-    }
-    console.log(`new contractAddress: ${contractAddress}`);
-    contract = new ContractPromise(api, contractMetadata, contractAddress);
+function setContractAddress(address, arbitrator) {
+    contractAddress = address;
     arbitratorAddress = arbitrator;
 }
 
 async function queryMessage(methodName, args = [], options = {}) {
-    const queryMethod = resolveContractMethod(methodName, "query");
-
-    if (!queryMethod) {
-        throw new Error(`Unsupported contract query method: ${methodName}`);
-    }
-
-    const queryOptions = {
-        gasLimit: getQueryGasLimit(),
-        ...options
-    };
-
-    let response = await queryMethod(signer.address, queryOptions, ...args);
-    let { gasRequired, result, output } = response;
-
-    if (result.isErr && isDispatchError(result.asErr, "revive", "AccountUnmapped")) {
-        await signAndSend(api.tx.revive.mapAccount());
-
-        response = await queryMethod(signer.address, queryOptions, ...args);
-        ({ gasRequired, result, output } = response);
-    }
-
-    if (result.isErr) {
-        throw new Error(formatDispatchError(result.asErr));
-    }
-
-    const contractError = findContractError(output?.toJSON?.() ?? output);
-    if (contractError) {
-        throw new Error(`Contract returned an error: ${contractError}`);
-    }
-
-    return { gasRequired, result, output };
-}
-
-async function getSignerAddress() {
-    return signerAddress;
-}
-
-const metadata = JSON.parse(fs.readFileSync('./target/ink/polkaward.json', 'utf8'));
-const abi = new Abi(metadata);
-
-async function callReviveDirectly(methodName) {
-    const provider = new WsProvider('ws://127.0.0.1:9944');
-    const api = await ApiPromise.create({ provider });
-    const keyring = new Keyring({ type: 'sr25519' });
-    const signer = keyring.addFromUri('//Alice');
-
-    // 2. Extract the 4-byte selector from the ABI
     const message = abi.messages.find(m => m.identifier === methodName);
-    const selectorHex = message.selector.toHex(); // e.g., '0x73d3a042'
+    if (!message) throw new Error(`Unsupported method: ${methodName}`);
 
-    // 3. Construct raw input data manually
-    // Strip '0x' from the H160 argument so it concatenates directly behind the selector
-    const rawH160Hex = arbitratorAddress.startsWith('0x') ? arbitratorAddress.slice(2) : arbitratorAddress;
-    const inputData = `${selectorHex}${rawH160Hex}`;
+    const selectorHex = message.selector.toHex().slice(2);
+    let argsHex = "";
+    // Note: this simple packing works for AccountId and u64 if args map strictly
+    // For a robust implementation, use `abi` message toU8a if it supports raw H160 correctly
+    for (const arg of args) {
+        if (typeof arg === 'string' && arg.startsWith('0x')) {
+            argsHex += encodeAccountId(arg);
+        } else if (typeof arg === 'number' || typeof arg === 'bigint') {
+            argsHex += encodeU64(arg);
+        }
+    }
 
-    console.log(`Raw Payload (No JS wrapper bytes): ${inputData}`);
+    const inputData = `0x${selectorHex}${argsHex}`;
 
-    // -------------------------------------------------------------
-    // A. DRY-RUN / QUERY (Read-Only)
-    // -------------------------------------------------------------
-
-    console.log("Dry run contract:", contract.address.toString());
     const dryRunResult = await api.call.reviveApi.call(
-        signer.address,   // origin (20-byte H160)
-        contract.address, // dest (20-byte H160)
-        0,                // value
-        null,             // weight limit (null = auto)
-        null,             // storage deposit limit
-        inputData         // Manual byte payload
+        signer.address,
+        contractAddress,
+        0, // value
+        null, // weight limit
+        null, // storage limit
+        inputData
     );
 
-    // 2. Check if the VM flagged a Revert (bit 0 = 1)
     const flags = dryRunResult.result.asOk.get('flags').get('bits').toNumber();
-    const isReverted = (flags & 1) !== 0;
-
-    if (isReverted) {
+    if ((flags & 1) !== 0) {
         const rawData = dryRunResult.result.asOk.data.toHex();
-
-        // Decode the return bytes against your contract ABI
-        const message = abi.messages.find(m => m.identifier === methodName);
-
-        abi.registry.register({
-            InkPrimitivesLangError: {
-                _enum: ['CouldNotReadInput']
+        let decodedErr = rawData;
+        try {
+            const returnType = message.returnType && message.returnType.type;
+            if (returnType) {
+                const decoded = abi.registry.createTypeUnsafe(returnType, [rawData]);
+                decodedErr = JSON.stringify(decoded.toHuman());
             }
-        });
-
-        const returnType = message.returnType && message.returnType.type;
-        if (!returnType) throw new Error('ABI message has no return type');
-        decoded = contract.abi.registry.createTypeUnsafe(returnType, [rawData]);
-
-        console.log('❌ Contract Reverted On-Chain!', JSON.stringify(decoded.toHuman().Ok.Err));
-
-        process.exit(1);
+        } catch(e) {}
+        throw new Error(`Contract Reverted: ${decodedErr}`);
     }
 
-    console.log("Dry run success! Estimated weight:", dryRunResult.gasConsumed.toString());
-
-    // -------------------------------------------------------------
-    // B. ON-CHAIN TRANSACTION
-    // -------------------------------------------------------------
-    return new Promise((resolve, reject) => {
-        const tx = api.tx.revive.call(
-            contract.address,
-            0,                          // value
-            dryRunResult.gasRequired,                // gas limit from dry run
-            dryRunResult.storageDeposit.asCharge,    // storage deposit limit
-            inputData                   // raw byte payload
-        );
-        return signAndSend(tx, signer, { waitForFinalized: true }).then(({ txHash, blockHash, events }) => {
-            resolve(txHash);
-        }).catch(reject);
-    });
+    return {
+        gasRequired: dryRunResult.weightRequired,
+        storageDeposit: dryRunResult.storageDeposit,
+        output: dryRunResult.result.asOk.data
+    };
 }
 
 async function sendMessage(methodName, args = [], options = {}) {
-    const txMethod = resolveContractMethod(methodName, "tx");
+    const { gasRequired, storageDeposit } = await queryMessage(methodName, args, options);
+    const message = abi.messages.find(m => m.identifier === methodName);
+    const selectorHex = message.selector.toHex().slice(2);
+    let argsHex = "";
 
-    if (!txMethod) {
-        throw new Error(`Unsupported contract transaction method: ${methodName}`);
+    for (const arg of args) {
+        if (typeof arg === 'string' && arg.startsWith('0x')) {
+            argsHex += encodeAccountId(arg);
+        } else if (typeof arg === 'number' || typeof arg === 'bigint') {
+            argsHex += encodeU64(arg);
+        }
     }
+    const inputData = `0x${selectorHex}${argsHex}`;
 
-    const queryMethod = resolveContractMethod(methodName, "query");
-    if (queryMethod) {
-        // Run query to ensure it doesn't revert, but discard the gasRequired.
-        await queryMessage(methodName, args, options);
-    }
-
-    // Use 80% of the max block weight to avoid exhausting block limits
-    let maxWeight = getQueryGasLimit();
-    let gasLimit = api.registry.createType("Weight", {
-        refTime: (BigInt(maxWeight.refTime.toString()) * 8n) / 10n,
-        proofSize: (BigInt(maxWeight.proofSize.toString()) * 8n) / 10n
+    const gasLimit = api.registry.createType("Weight", {
+        refTime: (BigInt(gasRequired.refTime.toString()) * 12n) / 10n,
+        proofSize: (BigInt(gasRequired.proofSize.toString()) * 12n) / 10n
     });
 
-    const tx = txMethod(
-        {
-            gasLimit: gasLimit,
-            ...options
-        },
-        ...args
+    const tx = api.tx.revive.call(
+        contractAddress,
+        0, // value
+        gasLimit,
+        storageDeposit.asCharge || (1n << 128n) - 1n,
+        inputData
     );
 
     return signAndSend(tx);
 }
 
 async function createEscrow(provider, arbitrator, duration, value = "10000000000000") {
-    const code = new CodePromise(
-        api,
-        contractMetadata,
-        contractMetadata.source.contract_binary
+    const constructorMessage = abi.constructors.find(c => c.identifier === 'new');
+    const selectorHex = constructorMessage.selector.toHex().slice(2);
+
+    const providerHex = encodeAccountId(provider);
+    const arbitratorHex = encodeAccountId(arbitrator);
+    const durationHex = encodeU64(duration);
+
+    const constructorArgs = `${selectorHex}${providerHex}${arbitratorHex}${durationHex}`;
+
+    // Revive instantiateWithCode requires bytecode + appended constructor args
+    let wasmBytecodeHex = contractMetadata.source.contract_binary || contractMetadata.source.wasm || contractMetadata.source.code;
+    if (wasmBytecodeHex.startsWith('0x')) wasmBytecodeHex = wasmBytecodeHex.slice(2);
+    const fullCodeBlob = `0x${wasmBytecodeHex}`;
+
+    const crypto = require("crypto");
+    const randomSalt = '0x' + crypto.randomBytes(32).toString('hex');
+
+    // Dry-run instantiate to get gas limits
+    const dryRunResult = await api.call.reviveApi.instantiate(
+        signer.address,
+        value,
+        null, // gas
+        null, // storage
+        { Upload: fullCodeBlob },
+        `0x${constructorArgs}`, // data
+        randomSalt
     );
 
-    let maxWeight = getQueryGasLimit();
-    let gasLimit = api.registry.createType("Weight", {
-        refTime: (BigInt(maxWeight.refTime.toString()) * 8n) / 10n,
-        proofSize: (BigInt(maxWeight.proofSize.toString()) * 8n) / 10n
+    if (dryRunResult.result.isErr) {
+        throw new Error(`Instantiate DryRun Failed: ${dryRunResult.result.asErr.toString()}`);
+    }
+
+    const gasLimit = api.registry.createType("Weight", {
+        refTime: (BigInt(dryRunResult.weightRequired.refTime.toString()) * 12n) / 10n,
+        proofSize: (BigInt(dryRunResult.weightRequired.proofSize.toString()) * 12n) / 10n
     });
 
-    // // 1. Selector for `new` constructor (4 bytes)
-    // const constructorSelector = abi.constructors.find(c => c.identifier === 'new').selector.toHex();
-
-    // const timeoutHex = '100e0000'; // 3600
-    // // 2. Extract WASM bytecode (handles both old and new ink! field names)
-    // const wasmBytecodeHex = contractMetadata.source.wasm || contractMetadata.source.code;
-    // const constructorArgs = `${constructorSelector}${arbitrator}${provider}${timeoutHex}`;
-    // // 3. Append arguments directly to the WASM code blob
-    // // wasmBytecodeHex starts with '0x', so constructorArgs gets tacked onto the end
-    // const fullCodeBlob = `${wasmBytecodeHex}${constructorArgs}`;
-    // const randomSalt = '0x' + crypto.randomBytes(32).toString('hex');
-
-    // 3. Deploy
-    // const tx = api.tx.revive.instantiateWithCode(
-    //     0,                     // value
-    //     gasLimit,
-    //     (1n << 128n) - 1n,     // storageDepositLimit, 
-    //     fullCodeBlob,          // Code + Constructor Args combined!
-    //     '0x',                  // data MUST be '0x' (empty)
-    //     randomSalt             // salt
-    // );
-
-
-    const tx = code.tx.new(
-        {
-            gasLimit,
-            storageDepositLimit: (1n << 128n) - 1n,
-            value
-        },
-        provider,
-        arbitrator,
-        duration
+    const tx = api.tx.revive.instantiateWithCode(
+        value,
+        gasLimit,
+        dryRunResult.storageDeposit.asCharge || (1n << 128n) - 1n,
+        fullCodeBlob,
+        `0x${constructorArgs}`,
+        randomSalt
     );
 
-    const { blockHash, contractAddress } = await signAndSend(tx, { extractAddress: true });
-    // const { blockHash, contractAddress } = await new Promise((resolve, reject) => {
-    //     tx.signAndSend(signer, ({ status, events = [], dispatchError }) => {
-    //         // Wait until the transaction is included in a block
-    //         if (status.isInBlock || status.isFinalized) {
+    const { blockHash, contractAddress: newAddress } = await signAndSend(tx, { extractAddress: true });
 
-    //             // 1. Handle runtime errors
-    //             if (dispatchError) {
-    //                 if (dispatchError.isModule) {
-    //                     const decoded = api.registry.findMetaError(dispatchError.asModule);
-    //                     return reject(new Error(`Instantiation Failed: ${decoded.section}.${decoded.name}`));
-    //                 }
-    //                 return reject(new Error(`Instantiation Failed: ${dispatchError.toString()}`));
-    //             }
+    if (newAddress) {
+        setContractAddress(newAddress, arbitrator);
+    }
 
-    //             // 2. Parse events to find the newly instantiated contract address
-    //             let contractAddress = null;
-
-    //             for (const { event } of events) {
-    //                 const isReviveInstantiated = 
-    //                     api.events.revive?.Instantiated?.is(event) ||
-    //                     (event.section === 'revive' && event.method === 'Instantiated') ||
-    //                     (event.section === 'contracts' && event.method === 'Instantiated');
-
-    //                 if (isReviveInstantiated) {
-    //                     // event.data structure: [deployerAddress, contractAddress]
-    //                     contractAddress = event.data[1].toString();
-    //                     break;
-    //                 }
-    //             }
-
-    //             if (!contractAddress) {
-    //                 console.warn("⚠️ Transaction succeeded, but no Instantiated event was found in events.");
-    //             } else {
-    //                 setContractAddress(contractAddress, arbitrator);
-    //             }
-
-    //             // 3. Resolve with blockHash and contractAddress
-    //             resolve({
-    //                 blockHash: (status.isInBlock 
-    //                     ? status.asInBlock 
-    //                     : status.asFinalized).toHex(),
-    //                 contractAddress
-    //             });
-    //         }
-    //     }).catch(reject);
-    // });
-    return { blockHash, contractAddress };
+    return { blockHash, contractAddress: newAddress };
 }
 
-async function releasePayment() {
-    return sendMessage("release_payment");
+async function getSignerAddress() {
+    return signerAddress;
 }
 
-async function completeWork() {
-    return sendMessage("complete_work");
-}
-
-async function refundClient() {
-    return sendMessage("refund_client");
-}
-
-async function raiseDispute() {
-    return sendMessage("raise_dispute");
-}
+async function releasePayment() { return sendMessage("release_payment"); }
+async function completeWork() { return sendMessage("complete_work"); }
+async function refundClient() { return sendMessage("refund_client"); }
+async function raiseDispute() { return sendMessage("raise_dispute"); }
+async function increment() { return completeWork(); }
 
 async function getState() {
     const { output } = await queryMessage("get_state");
-    return normalizeContractOutput(output);
-}
-
-async function increment() {
-    return completeWork();
+    // decode output against return type
+    const message = abi.messages.find(m => m.identifier === 'get_state');
+    if (message && message.returnType) {
+        const decoded = abi.registry.createTypeUnsafe(message.returnType.type, [output.toHex()]);
+        return decoded.toHuman()?.Ok || "Unknown";
+    }
+    return "Unknown";
 }
 
 async function disconnect() {
-    if (api) {
-        await api.disconnect();
-    }
+    if (api) await api.disconnect();
 }
 
 module.exports = {
-    init,
-    setContractAddress,
-    getSignerAddress,
-    createEscrow,
-    completeWork,
-    releasePayment,
-    refundClient,
-    raiseDispute,
-    getState,
-    increment,
-    disconnect
+    init, setContractAddress, getSignerAddress, createEscrow,
+    completeWork, releasePayment, refundClient, raiseDispute,
+    getState, increment, disconnect
 };
