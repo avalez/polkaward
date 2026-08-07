@@ -19,8 +19,29 @@ Builds both the contract and the frontend from the project root.
 npm run contract:build
 npm run frontend:build
 npm run dev
-npm run server
 ```
+
+Open http://localhost:5173/ in your browser.
+
+Click **Create Escrow**.
+
+**!!Update the contract address in .env!!**
+
+Call GitHub WebHook manually `curl -X POST http://localhost:3000/webhook -H "Content-Type: application/json" -d "{\"action\": \"opened\", \"issue\": {\"number\": 1}}"`
+
+Or for real world example:
+
+Configure ngrok to expose the server to the internet, for example: `ngrok http 3000`
+
+Configure **Git Hub WebHook** at https://github.com/hironobu/polkaward/settings/hooks.
+
+Initiate GitHub WebHook by pushing code to the repository.
+
+Click **complete_work**.
+
+Expect AwaitingApproval status in frontend.
+
+Alternative for testing directly without webhooks (for contract development) w. Polkadot.js Apps.
 
 ```sh
 pop up paseo -p passet-hub:9944

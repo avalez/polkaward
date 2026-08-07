@@ -53,6 +53,22 @@ mod escrow {
         state: u8,
     }
 
+    #[ink(event)]
+    pub struct CompleteWorkCalled {
+        #[ink(topic)]
+        caller: Address,
+        expected_arbitrator: Address,
+        state_before: u8,
+    }
+
+    #[ink(event)]
+    pub struct WorkCompleted {
+        #[ink(topic)]
+        caller: Address,
+        expiry: u64,
+        state_after: u8,
+    }
+
     impl Escrow {
         #[ink(constructor, payable)]
         pub fn new(provider: Address, arbitrator: Address, duration: u64) -> Self {
@@ -74,9 +90,15 @@ mod escrow {
         /// The arbitrator is expected to be the account used by the GitHub webhook service.
         #[ink(message)]
         pub fn complete_work(&mut self) -> Result<(), Error> {
-            if self.env().caller() != self.arbitrator {
+            let caller = self.env().caller();
+            self.env().emit_event(CompleteWorkCalled {
+                caller,
+                expected_arbitrator: self.arbitrator,
+                state_before: self.state,
+            });
+            if caller != self.arbitrator {
                 return Err(Error::AddressMismatch {
-                    caller: self.env().caller(),
+                    caller: caller,
                     expected: self.arbitrator,
                 });
             }
@@ -86,6 +108,11 @@ mod escrow {
 
             self.expiry = self.env().block_timestamp() + (self.duration * 1000);
             self.state = EscrowState::AwaitingApproval.to_u8();
+            self.env().emit_event(WorkCompleted {
+                caller,
+                expiry: self.expiry,
+                state_after: self.state,
+            });
             Ok(())
         }
 

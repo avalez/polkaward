@@ -165,7 +165,7 @@ async function queryMessage(methodName, args = [], options = {}) {
                 decodedErr = JSON.stringify(decoded.toHuman());
             }
         } catch(e) {}
-        throw new Error(`Contract Reverted: ${decodedErr}`);
+        throw new Error(`Contract Reverted in ${methodName}: ${decodedErr}`);
     }
 
     return {
