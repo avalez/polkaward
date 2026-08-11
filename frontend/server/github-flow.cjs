@@ -2,6 +2,7 @@ const contract = require("./contract.cjs");
 
 function createGitHubFlowStore() {
   const repoWalletMappings = new Map();
+  const awaitingApprovals = new Map();
 
   return {
     setRepoWalletMapping(repo, walletAddress, installationId, contractAddress) {
@@ -21,7 +22,8 @@ function createGitHubFlowStore() {
         contract.setContractAddress(mapping.contractAddress, mapping.walletAddress);
       }
 
-      await contract.completeWork();
+      awaitingApprovals.set(repo, { status: "awaiting" });
+      return await contract.completeWork();
     },
 
     async getAwaitingApproval(repo) {
@@ -40,7 +42,7 @@ function createGitHubFlowStore() {
         if (mapping?.contractAddress) {
           contract.setContractAddress(mapping.contractAddress, mapping.walletAddress);
           const state = await contract.getState();
-          results.push({ repo, approval, state });
+          results.push({ repo, ...approval, state });
         } else {
           results.push({ repo, ...approval });
         }
