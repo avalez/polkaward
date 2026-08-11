@@ -62,11 +62,6 @@ async function handleWebhook(req, res) {
         return res.status(400).json({ error: "GitHub webhook payload has no repository name" });
     }
 
-    githubFlowStore.setPendingApproval(repo, {
-        action: "complete_work",
-        status: "pending"
-    });
-
     try {
         const mapping = githubFlowStore.getRepoWalletMapping(repo);
 
@@ -76,14 +71,13 @@ async function handleWebhook(req, res) {
             });
         }
 
-        contract.setContractAddress(mapping.contractAddress);
-        const hash = await contract.completeWork();
+        const state = await githubFlowStore.setAwaitingApproval(repo);
 
-        console.log("Contract updated:", hash);
+        console.log("Contract updated:", state);
 
         res.json({
             success: true,
-            tx: hash
+            state: state
         });
     } catch (err) {
         console.error(err);
@@ -117,10 +111,7 @@ app.post("/github/approval", (req, res) => {
             installationId || null,
             contractAddress || null
         );
-        githubFlowStore.setPendingApproval(repo, {
-            action: "complete_work",
-            status: "pending"
-        });
+        console.log(`GitHub approval set for ${repo}: wallet=${walletAddress}, installationId=${installationId}, contractAddress=${contractAddress}`);
 
         return res.json({ success: true, repo, walletAddress, contractAddress: contractAddress || null });
     } catch (error) {
@@ -130,7 +121,7 @@ app.post("/github/approval", (req, res) => {
 });
 
 app.get("/github/approvals", (req, res) => {
-    res.json(githubFlowStore.getPendingApprovals());
+    res.json(githubFlowStore.getAwaitingApprovals());
 });
 
 app.get("/contract/signer-address", async (_req, res) => {

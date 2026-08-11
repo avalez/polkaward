@@ -1,25 +1,55 @@
+const contract = require("./contract.cjs");
+
 function createGitHubFlowStore() {
   const repoWalletMappings = new Map();
-  const pendingApprovals = new Map();
 
   return {
     setRepoWalletMapping(repo, walletAddress, installationId, contractAddress) {
       repoWalletMappings.set(repo, { walletAddress, installationId, contractAddress });
+      if (contractAddress) {
+        contract.setContractAddress(contractAddress, walletAddress);
+      }
     },
+
     getRepoWalletMapping(repo) {
       return repoWalletMappings.get(repo) ?? null;
     },
-    setPendingApproval(repo, approval) {
-      pendingApprovals.set(repo, approval);
+
+    async setAwaitingApproval(repo) {
+      const mapping = repoWalletMappings.get(repo);
+      if (mapping?.contractAddress) {
+        contract.setContractAddress(mapping.contractAddress, mapping.walletAddress);
+      }
+
+      await contract.completeWork();
     },
-    getPendingApproval(repo) {
-      return pendingApprovals.get(repo) ?? null;
+
+    async getAwaitingApproval(repo) {
+      const mapping = repoWalletMappings.get(repo);
+      if (mapping?.contractAddress) {
+        contract.setContractAddress(mapping.contractAddress, mapping.walletAddress);
+        return await contract.getState();
+      }
+      return null;
     },
-    getPendingApprovals() {
-      return Array.from(pendingApprovals.entries()).map(([repo, approval]) => ({ repo, ...approval }));
+
+    async getAwaitingApprovals() {
+      const results = [];
+      for (const [repo, approval] of awaitingApprovals.entries()) {
+        const mapping = repoWalletMappings.get(repo);
+        if (mapping?.contractAddress) {
+          contract.setContractAddress(mapping.contractAddress, mapping.walletAddress);
+          const state = await contract.getState();
+          results.push({ repo, approval, state });
+        } else {
+          results.push({ repo, ...approval });
+        }
+      }
+      return results;
     },
-    clearPendingApproval(repo) {
-      pendingApprovals.delete(repo);
+
+    clearAwaitingApproval(repo) {
+      awaitingApprovals.delete(repo);
     }
   };
 }
