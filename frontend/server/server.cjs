@@ -67,11 +67,11 @@ async function handleWebhook(req, res) {
 
         if (!mapping?.contractAddress) {
             return res.status(409).json({
-                error: `No escrow contract is linked to ${repo}. Create an escrow or reconnect GitHub approval.`
+                error: `No escrow contract is linked to ${repo}. Create an escrow or reconnect the GitHub repo mapping.`
             });
         }
 
-        const state = await githubFlowStore.setAwaitingApproval(repo);
+        const state = await githubFlowStore.setWorkSignal(repo);
 
         console.log("Contract updated:", state);
 
@@ -97,7 +97,7 @@ app.post("/", webhookBodyParser, handleWebhook);
 // GitHub's exact request bytes.
 app.use(express.json());
 
-app.post("/github/approval", (req, res) => {
+app.post("/github/repo", (req, res) => {
     try {
         const { repo, walletAddress, installationId, contractAddress } = req.body || {};
 
@@ -111,17 +111,17 @@ app.post("/github/approval", (req, res) => {
             installationId || null,
             contractAddress || null
         );
-        console.log(`GitHub approval set for ${repo}: wallet=${walletAddress}, installationId=${installationId}, contractAddress=${contractAddress}`);
+        console.log(`GitHub repo linked for ${repo}: wallet=${walletAddress}, installationId=${installationId}, contractAddress=${contractAddress}`);
 
         return res.json({ success: true, repo, walletAddress, contractAddress: contractAddress || null });
     } catch (error) {
-        console.error("GitHub approval error", error);
-        return res.status(500).json({ success: false, error: error instanceof Error ? error.message : "GitHub approval failed" });
+        console.error("GitHub repo link error", error);
+        return res.status(500).json({ success: false, error: error instanceof Error ? error.message : "GitHub repo link failed" });
     }
 });
 
-app.get("/github/approvals", (req, res) => {
-    res.json(githubFlowStore.getAwaitingApprovals());
+app.get("/github/repos", (req, res) => {
+    res.json(githubFlowStore.getWorkSignals());
 });
 
 app.get("/contract/signer-address", async (_req, res) => {

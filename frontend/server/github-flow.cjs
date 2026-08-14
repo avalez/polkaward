@@ -2,7 +2,7 @@ const contract = require("./contract.cjs");
 
 function createGitHubFlowStore() {
   const repoWalletMappings = new Map();
-  const awaitingApprovals = new Map();
+  const repoWorkSignals = new Map();
 
   return {
     setRepoWalletMapping(repo, walletAddress, installationId, contractAddress) {
@@ -16,17 +16,17 @@ function createGitHubFlowStore() {
       return repoWalletMappings.get(repo) ?? null;
     },
 
-    async setAwaitingApproval(repo) {
+    async setWorkSignal(repo) {
       const mapping = repoWalletMappings.get(repo);
       if (mapping?.contractAddress) {
         contract.setContractAddress(mapping.contractAddress, mapping.walletAddress);
       }
 
-      awaitingApprovals.set(repo, { status: "awaiting" });
+      repoWorkSignals.set(repo, { status: "triggered" });
       return await contract.completeWork();
     },
 
-    async getAwaitingApproval(repo) {
+    async getWorkSignal(repo) {
       const mapping = repoWalletMappings.get(repo);
       if (mapping?.contractAddress) {
         contract.setContractAddress(mapping.contractAddress, mapping.walletAddress);
@@ -35,23 +35,23 @@ function createGitHubFlowStore() {
       return null;
     },
 
-    async getAwaitingApprovals() {
+    async getWorkSignals() {
       const results = [];
-      for (const [repo, approval] of awaitingApprovals.entries()) {
+      for (const [repo, workSignal] of repoWorkSignals.entries()) {
         const mapping = repoWalletMappings.get(repo);
         if (mapping?.contractAddress) {
           contract.setContractAddress(mapping.contractAddress, mapping.walletAddress);
           const state = await contract.getState();
-          results.push({ repo, ...approval, state });
+          results.push({ repo, ...workSignal, state });
         } else {
-          results.push({ repo, ...approval });
+          results.push({ repo, ...workSignal });
         }
       }
       return results;
     },
 
-    clearAwaitingApproval(repo) {
-      awaitingApprovals.delete(repo);
+    clearWorkSignal(repo) {
+      repoWorkSignals.delete(repo);
     }
   };
 }

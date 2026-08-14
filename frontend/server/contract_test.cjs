@@ -22,17 +22,24 @@ const test = async () => {
         console.log("Deployed escrow:", deployment);
 
         const pendingState = await c.getState();
-        assert.equal(pendingState, "PendingWork", "new escrow should start in PendingWork");
+        assert.equal(pendingState, "Funded", "new escrow should start in Funded");
         console.log("Initial state:", pendingState);
 
         const blockHash = await c.completeWork();
         console.log("complete_work tx:", blockHash);
 
-        const awaitingState = await c.getState();
-        assert.equal(awaitingState, "AwaitingApproval", "complete_work should move escrow to AwaitingApproval");
-        console.log("State after complete_work:", awaitingState);
+        const stateAfterCompletion = await c.getState();
+        assert.equal(stateAfterCompletion, "Funded", "complete_work should leave the escrow in Funded");
+        console.log("State after complete_work:", stateAfterCompletion);
 
-        console.log("complete_work test passed");
+        const releaseTx = await c.releasePayment();
+        console.log("release_payment tx:", releaseTx);
+
+        const finalState = await c.getState();
+        assert.equal(finalState, "Completed", "release_payment should settle the escrow as Completed");
+        console.log("State after release_payment:", finalState);
+
+        console.log("complete_work and release_payment test passed");
     } finally {
         await c.disconnect();
     }

@@ -1,6 +1,6 @@
 {
   "source": {
-    "hash": "0x91de1bbe9d5117cea82d496b9a80a790b0a2b33d30a6dbd26344407e1b7f74af",
+    "hash": "0x629389e6c8535e390e43837ff3dcdddd406c8113e5d6fd921e3673b76d12faac",
     "language": "ink! 6.0.0-beta.1",
     "compiler": "rustc 1.94.1",
     "build_info": {
@@ -69,25 +69,25 @@
         "displayName": [
           "AccountId"
         ],
-        "type": 15
+        "type": 16
       },
       "balance": {
         "displayName": [
           "Balance"
         ],
-        "type": 17
+        "type": 18
       },
       "blockNumber": {
         "displayName": [
           "BlockNumber"
         ],
-        "type": 19
+        "type": 20
       },
       "hash": {
         "displayName": [
           "Hash"
         ],
-        "type": 18
+        "type": 19
       },
       "nativeToEthRatio": 100000000,
       "poolAssetsPrecompileIndex": 800,
@@ -100,7 +100,90 @@
       },
       "trustBackedAssetsPrecompileIndex": 288
     },
-    "events": [],
+    "events": [
+      {
+        "args": [
+          {
+            "docs": [],
+            "indexed": true,
+            "label": "caller",
+            "type": {
+              "displayName": [
+                "Address"
+              ],
+              "type": 0
+            }
+          },
+          {
+            "docs": [],
+            "indexed": false,
+            "label": "expiry",
+            "type": {
+              "displayName": [
+                "u64"
+              ],
+              "type": 5
+            }
+          },
+          {
+            "docs": [],
+            "indexed": false,
+            "label": "state_after",
+            "type": {
+              "displayName": [
+                "u8"
+              ],
+              "type": 2
+            }
+          }
+        ],
+        "docs": [],
+        "label": "WorkCompleted",
+        "module_path": "polkaward::escrow",
+        "signature_topic": "0x8b145737e09161dbab4ecf2c125aa75c629346c3e27601ba6378ab68cd3fb046"
+      },
+      {
+        "args": [
+          {
+            "docs": [],
+            "indexed": true,
+            "label": "caller",
+            "type": {
+              "displayName": [
+                "Address"
+              ],
+              "type": 0
+            }
+          },
+          {
+            "docs": [],
+            "indexed": false,
+            "label": "expected_arbitrator",
+            "type": {
+              "displayName": [
+                "Address"
+              ],
+              "type": 0
+            }
+          },
+          {
+            "docs": [],
+            "indexed": false,
+            "label": "state_before",
+            "type": {
+              "displayName": [
+                "u8"
+              ],
+              "type": 2
+            }
+          }
+        ],
+        "docs": [],
+        "label": "CompleteWorkCalled",
+        "module_path": "polkaward::escrow",
+        "signature_topic": "0x8a449b72e9e99268bd329eb094df3b9a25f90bbcbcb3f4da85a2f38aa62c603f"
+      }
+    ],
     "lang_error": {
       "displayName": [
         "ink",
@@ -201,6 +284,22 @@
           "type": 13
         },
         "selector": "0x3d1e8968"
+      },
+      {
+        "args": [],
+        "default": false,
+        "docs": [],
+        "label": "get_arbitrator",
+        "mutates": false,
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink",
+            "MessageResult"
+          ],
+          "type": 15
+        },
+        "selector": "0x93a45026"
       }
     ]
   },
@@ -572,23 +671,39 @@
                 "name": "Unauthorized"
               },
               {
+                "fields": [
+                  {
+                    "name": "caller",
+                    "type": 0,
+                    "typeName": "H160"
+                  },
+                  {
+                    "name": "expected",
+                    "type": 0,
+                    "typeName": "H160"
+                  }
+                ],
                 "index": 1,
-                "name": "InvalidState"
+                "name": "AddressMismatch"
               },
               {
                 "index": 2,
-                "name": "DeadlineNotPassed"
+                "name": "InvalidState"
               },
               {
                 "index": 3,
-                "name": "DeadlinePassed"
+                "name": "DeadlineNotPassed"
               },
               {
                 "index": 4,
-                "name": "TransferFailed"
+                "name": "DeadlinePassed"
               },
               {
                 "index": 5,
+                "name": "TransferFailed"
+              },
+              {
+                "index": 6,
                 "name": "ZeroDeposit"
               }
             ]
@@ -651,22 +766,18 @@
             "variants": [
               {
                 "index": 0,
-                "name": "PendingWork"
+                "name": "Funded"
               },
               {
                 "index": 1,
-                "name": "AwaitingApproval"
-              },
-              {
-                "index": 2,
                 "name": "Disputed"
               },
               {
-                "index": 3,
+                "index": 2,
                 "name": "Completed"
               },
               {
-                "index": 4,
+                "index": 3,
                 "name": "Refunded"
               }
             ]
@@ -683,10 +794,52 @@
       "id": 15,
       "type": {
         "def": {
+          "variant": {
+            "variants": [
+              {
+                "fields": [
+                  {
+                    "type": 0
+                  }
+                ],
+                "index": 0,
+                "name": "Ok"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 9
+                  }
+                ],
+                "index": 1,
+                "name": "Err"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 0
+          },
+          {
+            "name": "E",
+            "type": 9
+          }
+        ],
+        "path": [
+          "Result"
+        ]
+      }
+    },
+    {
+      "id": 16,
+      "type": {
+        "def": {
           "composite": {
             "fields": [
               {
-                "type": 16,
+                "type": 17,
                 "typeName": "[u8; 32]"
               }
             ]
@@ -700,7 +853,7 @@
       }
     },
     {
-      "id": 16,
+      "id": 17,
       "type": {
         "def": {
           "array": {
@@ -711,7 +864,7 @@
       }
     },
     {
-      "id": 17,
+      "id": 18,
       "type": {
         "def": {
           "primitive": "u128"
@@ -719,13 +872,13 @@
       }
     },
     {
-      "id": 18,
+      "id": 19,
       "type": {
         "def": {
           "composite": {
             "fields": [
               {
-                "type": 16,
+                "type": 17,
                 "typeName": "[u8; 32]"
               }
             ]
@@ -739,7 +892,7 @@
       }
     },
     {
-      "id": 19,
+      "id": 20,
       "type": {
         "def": {
           "primitive": "u32"

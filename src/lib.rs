@@ -8,8 +8,7 @@ mod escrow {
     #[derive(Clone, Copy, PartialEq, Eq, Debug)]
     #[ink::scale_derive(Encode, Decode, TypeInfo)]
     pub enum EscrowState {
-        PendingWork,
-        AwaitingApproval,
+        Funded,
         Disputed,
         Completed,
         Refunded,
@@ -18,10 +17,9 @@ mod escrow {
     impl EscrowState {
         fn from_u8(value: u8) -> Self {
             match value {
-                0 => EscrowState::PendingWork,
-                1 => EscrowState::AwaitingApproval,
-                2 => EscrowState::Disputed,
-                3 => EscrowState::Completed,
+                0 => EscrowState::Funded,
+                1 => EscrowState::Disputed,
+                2 => EscrowState::Completed,
                 _ => EscrowState::Refunded,
             }
         }
@@ -82,7 +80,7 @@ mod escrow {
                 amount,
                 duration,
                 expiry: 0,
-                state: EscrowState::PendingWork.to_u8(),
+                state: EscrowState::Funded.to_u8(),
             }
         }
 
@@ -102,12 +100,11 @@ mod escrow {
                     expected: self.arbitrator,
                 });
             }
-            if EscrowState::from_u8(self.state) != EscrowState::PendingWork {
+            if EscrowState::from_u8(self.state) != EscrowState::Funded {
                 return Err(Error::InvalidState);
             }
 
             self.expiry = self.env().block_timestamp() + (self.duration * 1000);
-            self.state = EscrowState::AwaitingApproval.to_u8();
             self.env().emit_event(WorkCompleted {
                 caller,
                 expiry: self.expiry,
@@ -123,12 +120,12 @@ mod escrow {
             let caller = self.env().caller();
 
             match EscrowState::from_u8(self.state) {
-                EscrowState::AwaitingApproval => {
+                EscrowState::Funded => {
                     // Under normal circumstances, only the client can release the funds
                     if caller != self.client {
                         return Err(Error::Unauthorized);
                     }
-                    // Prevent closing if the contract expired before they approved (forces cleanup/refund instead)
+                    // Prevent closing if the contract expired before the work was settled (forces cleanup/refund instead)
                     if self.env().block_timestamp() >= self.expiry {
                         return Err(Error::DeadlinePassed);
                     }
@@ -159,7 +156,7 @@ mod escrow {
             let caller = self.env().caller();
 
             match EscrowState::from_u8(self.state) {
-                EscrowState::AwaitingApproval => {
+                EscrowState::Funded => {
                     if caller != self.client {
                         return Err(Error::Unauthorized);
                     }
@@ -196,7 +193,7 @@ mod escrow {
             if caller != self.client && caller != self.provider  {
                 return Err(Error::Unauthorized);
             }
-            if EscrowState::from_u8(self.state) != EscrowState::AwaitingApproval {
+            if EscrowState::from_u8(self.state) != EscrowState::Funded {
                 return Err(Error::InvalidState);
             }
 
@@ -243,11 +240,31 @@ mod escrow {
             ink::env::test::set_value_transferred(U256::from(100));
             set_block_timestamp(0);
             let mut contract = Escrow::new(provider, arbitrator, 10);
-            assert_eq!(contract.get_state(), EscrowState::PendingWork);
+            assert_eq!(contract.get_state(), EscrowState::Funded);
 
             set_sender(arbitrator);
             assert_eq!(contract.complete_work(), Ok(()));
-            assert_eq!(contract.get_state(), EscrowState::AwaitingApproval);
+            assert_eq!(contract.get_state(), EscrowState::Funded);
+
+            set_sender(client);
+            assert_eq!(contract.release_payment(), Ok(()));
+            assert_eq!(contract.get_state(), EscrowState::Completed);
+        }
+
+        #[ink::test]
+        fn release_payment_from_funded_state_works() {
+            let client = create_address(1);
+            let provider = create_address(2);
+            let arbitrator = create_address(3);
+
+            set_sender(client);
+            ink::env::test::set_value_transferred(U256::from(100));
+            set_block_timestamp(0);
+            let mut contract = Escrow::new(provider, arbitrator, 10);
+
+            set_sender(arbitrator);
+            assert_eq!(contract.complete_work(), Ok(()));
+            assert_eq!(contract.get_state(), EscrowState::Funded);
 
             set_sender(client);
             assert_eq!(contract.release_payment(), Ok(()));
@@ -267,6 +284,7 @@ mod escrow {
 
             set_sender(arbitrator);
             assert_eq!(contract.complete_work(), Ok(()));
+            assert_eq!(contract.get_state(), EscrowState::Funded);
 
             set_sender(client);
             set_block_timestamp(5000);
@@ -290,6 +308,7 @@ mod escrow {
 
             set_sender(arbitrator);
             assert_eq!(contract.complete_work(), Ok(()));
+            assert_eq!(contract.get_state(), EscrowState::Funded);
 
             set_sender(provider);
             assert_eq!(contract.raise_dispute(), Ok(()));
@@ -311,11 +330,14 @@ mod escrow {
             set_block_timestamp(1_000);
             let mut contract = Escrow::new(provider, arbitrator, 10);
 
-            assert_eq!(contract.complete_work(), Err(Error::Unauthorized));
+            assert_eq!(contract.complete_work(), Err(Error::AddressMismatch {
+                caller: client,
+                expected: arbitrator,
+            }));
 
             set_sender(arbitrator);
             assert_eq!(contract.complete_work(), Ok(()));
-            assert_eq!(contract.get_state(), EscrowState::AwaitingApproval);
+            assert_eq!(contract.get_state(), EscrowState::Funded);
         }
     }
 }

@@ -1,21 +1,10 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const c = require("./contract.cjs");
-const path = require("path");
 
 const { createGitHubFlowStore } = require("./github-flow.cjs");
 
-if (typeof process.loadEnvFile === "function") {
-    try {
-        process.loadEnvFile(path.resolve(__dirname, "../../.env"));
-    } catch (error) {
-        if (error?.code !== "ENOENT") {
-            throw error;
-        }
-    }
-}
-
-test("stores repo wallet mappings and awaiting approvals", async (t) => {
+test("stores repo wallet mappings and work signals", async (t) => {
   const store = createGitHubFlowStore();
   await c.init();
 
@@ -29,14 +18,19 @@ test("stores repo wallet mappings and awaiting approvals", async (t) => {
   const deployment = await c.createEscrow(provider, arbitrator, 100);
   console.log("Deployed escrow:", deployment);
   let state = await c.getState();
-  assert.equal(state, "PendingWork", "new escrow should start in PendingWork");
+  assert.equal(state, "Funded", "new escrow should start in Funded");
 
   store.setRepoWalletMapping("octo/demo", arbitrator, provider, deployment.contractAddress);
-  await store.setAwaitingApproval("octo/demo");
+  await store.setWorkSignal("octo/demo");
   state = await c.getState();
-  assert.equal(state, "AwaitingApproval", "complete_work should move escrow to AwaitingApproval");
+  assert.equal(state, "Funded", "complete_work should keep the escrow in Funded");
 
-  const approvals = await store.getAwaitingApprovals();
-  console.log(approvals);
-  assert.equal(approvals.length, 1);
+  const releaseTx = await c.releasePayment();
+  console.log("release_payment tx:", releaseTx);
+  state = await c.getState();
+  assert.equal(state, "Completed", "release_payment should settle the escrow as Completed");
+
+  const workSignals = await store.getWorkSignals();
+  console.log(workSignals);
+  assert.equal(workSignals.length, 1);
 });

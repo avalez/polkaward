@@ -3,7 +3,7 @@ import { Abi, CodePromise, ContractPromise } from '@polkadot/api-contract';
 import type { Signer } from '@polkadot/api/types';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 
-const GITHUB_APPROVAL_API = '/github/approval';
+const GITHUB_REPO_API = '/github/repo';
 const API_BASE_URL = import.meta.env.DEV ? 'http://127.0.0.1:3000' : '';
 import {
   useInstalledWallets,
@@ -288,10 +288,8 @@ function EscrowInstance({
             <span className='mb-1 text-sm text-slate-400'>Escrow State</span>
             <span
               className={`rounded-full px-3 py-1 text-sm font-semibold ${
-                stateStr === 'PendingWork'
+                stateStr === 'Funded'
                   ? 'bg-cyan-500/20 text-cyan-300'
-                  : stateStr === 'AwaitingApproval'
-                  ? 'bg-amber-500/20 text-amber-300'
                   : stateStr === 'Completed'
                     ? 'bg-emerald-500/20 text-emerald-300'
                     : stateStr === 'Disputed'
@@ -334,7 +332,7 @@ function EscrowInstance({
 
         <button
           className='h-11 w-full rounded-md bg-rose-500 px-4 font-semibold text-slate-950 transition hover:bg-rose-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400'
-          disabled={isActionPending || stateStr !== 'AwaitingApproval' || !signer}
+          disabled={isActionPending || stateStr !== 'Funded' || !signer}
           onClick={() => signMessage('raiseDispute')}
           type='button'
         >
@@ -363,7 +361,7 @@ function App() {
   const [deployError, setDeployError] = useState('');
   const [deployStatus, setDeployStatus] = useState<SignAndSendStatus>('None');
   const [githubRepo, setGithubRepo] = useState('avalez/polkaward');
-  const [githubApprovalStatus, setGithubApprovalStatus] = useState('');
+  const [githubRepoStatus, setGithubRepoStatus] = useState('');
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/contract/signer-address`)
@@ -428,14 +426,14 @@ function App() {
   const deploymentError = formError || deployError || apiError;
   const signer = account?.wallet?.extension?.signer as Signer | undefined;
 
-  const connectGitHubApproval = async (contractAddress = activeContractAddress) => {
+  const connectGitHubRepo = async (contractAddress = activeContractAddress) => {
     if (!account?.address) {
-      setGithubApprovalStatus('Connect a wallet first.');
+      setGithubRepoStatus('Connect a wallet first.');
       return;
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}${GITHUB_APPROVAL_API}`, {
+      const response = await fetch(`${API_BASE_URL}${GITHUB_REPO_API}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -455,12 +453,12 @@ function App() {
       }
 
       if (!response.ok || data.success === false) {
-        throw new Error(data.error || 'Could not register GitHub approval.');
+        throw new Error(data.error || 'Could not link GitHub repo.');
       }
 
-      setGithubApprovalStatus(`GitHub approval linked for ${githubRepo}.`);
+      setGithubRepoStatus(`GitHub repo linked for ${githubRepo}.`);
     } catch (error) {
-      setGithubApprovalStatus(error instanceof Error ? error.message : 'GitHub approval failed.');
+      setGithubRepoStatus(error instanceof Error ? error.message : 'GitHub repo link failed.');
     }
   };
 
@@ -576,7 +574,7 @@ function App() {
         if (contractAddress) {
           setActiveContractAddress(contractAddress);
           localStorage.setItem(ACTIVE_CONTRACT_STORAGE_KEY, contractAddress);
-          void connectGitHubApproval(contractAddress);
+          void connectGitHubRepo(contractAddress);
         }
 
         if (result.dispatchError) {
@@ -603,8 +601,8 @@ function App() {
           {account ? (
             <div className='mt-6 flex flex-col gap-6'>
               <div className='rounded-lg border border-slate-800 bg-slate-950/70 p-4'>
-                <h2 className='text-lg font-semibold text-slate-100'>GitHub App approval flow</h2>
-                <p className='mt-2 text-sm text-slate-400'>Register a repository so webhook events can prompt an approval that is signed from your connected wallet.</p>
+                <h2 className='text-lg font-semibold text-slate-100'>GitHub repo sync</h2>
+                <p className='mt-2 text-sm text-slate-400'>Register a repository so webhook events can trigger the funded escrow flow from your connected wallet.</p>
                 <div className='mt-4 flex flex-col gap-3 sm:flex-row'>
                   <input
                     className='h-11 flex-1 rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100 outline-none transition focus:border-cyan-400'
@@ -615,14 +613,14 @@ function App() {
                   />
                   <button
                     className='h-11 rounded-md bg-emerald-500 px-4 font-semibold text-slate-950 transition hover:bg-emerald-400'
-                    onClick={() => void connectGitHubApproval()}
+                    onClick={() => void connectGitHubRepo()}
                     type='button'
                   >
                     Link GitHub Repo
                   </button>
                 </div>
-                {githubApprovalStatus ? (
-                  <p className='mt-3 text-sm text-cyan-300'>{githubApprovalStatus}</p>
+                {githubRepoStatus ? (
+                  <p className='mt-3 text-sm text-cyan-300'>{githubRepoStatus}</p>
                 ) : null}
               </div>
 

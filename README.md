@@ -39,7 +39,7 @@ Initiate GitHub WebHook by pushing code to the repository.
 
 Click **complete_work**.
 
-Expect AwaitingApproval status in frontend.
+The escrow remains in Funded until a settlement or dispute resolution occurs.
 
 Alternative for testing directly without webhooks (for contract development) w. Polkadot.js Apps.
 
