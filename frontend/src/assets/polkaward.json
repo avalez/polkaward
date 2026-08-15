@@ -1,6 +1,6 @@
 {
   "source": {
-    "hash": "0x629389e6c8535e390e43837ff3dcdddd406c8113e5d6fd921e3673b76d12faac",
+    "hash": "0xbe359251021dda46504efa34bd3a35b6d149069532e0e0bb409d8383dc24fa7d",
     "language": "ink! 6.0.0-beta.1",
     "compiler": "rustc 1.94.1",
     "build_info": {
@@ -138,9 +138,9 @@
           }
         ],
         "docs": [],
-        "label": "WorkCompleted",
+        "label": "WorkReleased",
         "module_path": "polkaward::escrow",
-        "signature_topic": "0x8b145737e09161dbab4ecf2c125aa75c629346c3e27601ba6378ab68cd3fb046"
+        "signature_topic": "0x445be33d7aa08f287c3fd4e982ddc18dd188cd22995c2d70e51af574ad253311"
       },
       {
         "args": [
@@ -179,9 +179,9 @@
           }
         ],
         "docs": [],
-        "label": "CompleteWorkCalled",
+        "label": "ReleasePaymentCalled",
         "module_path": "polkaward::escrow",
-        "signature_topic": "0x8a449b72e9e99268bd329eb094df3b9a25f90bbcbcb3f4da85a2f38aa62c603f"
+        "signature_topic": "0xea0fa1106baa90dcff75fad22185fadcf4db4e3be0a88d61ca3fc1bf3acf9b2c"
       }
     ],
     "lang_error": {
@@ -192,25 +192,6 @@
       "type": 9
     },
     "messages": [
-      {
-        "args": [],
-        "default": false,
-        "docs": [
-          " Confirms the off-chain work event and starts the escrow deadline.",
-          " The arbitrator is expected to be the account used by the GitHub webhook service."
-        ],
-        "label": "complete_work",
-        "mutates": true,
-        "payable": false,
-        "returnType": {
-          "displayName": [
-            "ink",
-            "MessageResult"
-          ],
-          "type": 10
-        },
-        "selector": "0xa79ee65b"
-      },
       {
         "args": [],
         "default": false,
@@ -774,7 +755,7 @@
               },
               {
                 "index": 2,
-                "name": "Completed"
+                "name": "Released"
               },
               {
                 "index": 3,

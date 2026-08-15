@@ -187,7 +187,7 @@ function EscrowInstance({
   const [stateStr, setStateStr] = useState('Loading...');
   const [actionStatus, setActionStatus] = useState<SignAndSendStatus>('None');
   const [actionError, setActionError] = useState('');
-  const isTerminalState = stateStr === 'Completed' || stateStr === 'Refunded';
+  const isTerminalState = stateStr === 'Released' || stateStr === 'Refunded';
   const formattedAddress = useMemo(
     () =>
       address.length > 16
@@ -290,7 +290,7 @@ function EscrowInstance({
               className={`rounded-full px-3 py-1 text-sm font-semibold ${
                 stateStr === 'Funded'
                   ? 'bg-cyan-500/20 text-cyan-300'
-                  : stateStr === 'Completed'
+                  : stateStr === 'Released'
                     ? 'bg-emerald-500/20 text-emerald-300'
                     : stateStr === 'Disputed'
                       ? 'bg-rose-500/20 text-rose-300'

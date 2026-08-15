@@ -22,13 +22,13 @@ test("stores repo wallet mappings and work signals", async (t) => {
 
   store.setRepoWalletMapping("octo/demo", arbitrator, provider, deployment.contractAddress);
   await store.setWorkSignal("octo/demo");
-  state = await c.getState();
-  assert.equal(state, "Funded", "complete_work should keep the escrow in Funded");
+  let currentState = await c.getState();
+  assert.equal(currentState, "Funded", "escrow should be Funded after work signal");
 
   const releaseTx = await c.releasePayment();
   console.log("release_payment tx:", releaseTx);
-  state = await c.getState();
-  assert.equal(state, "Completed", "release_payment should settle the escrow as Completed");
+  currentState = await c.getState();
+  assert.equal(currentState, "Released", "release_payment should settle as Released");
 
   const workSignals = await store.getWorkSignals();
   console.log(workSignals);

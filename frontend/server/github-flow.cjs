@@ -23,7 +23,7 @@ function createGitHubFlowStore() {
       }
 
       repoWorkSignals.set(repo, { status: "triggered" });
-      return await contract.completeWork();
+      return await contract.getState();
     },
 
     async getWorkSignal(repo) {

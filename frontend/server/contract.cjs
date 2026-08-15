@@ -267,7 +267,6 @@ async function getSignerAddress() {
 }
 
 async function releasePayment() { return sendMessage("release_payment"); }
-async function completeWork() { return sendMessage("complete_work"); }
 async function refundClient() { return sendMessage("refund_client"); }
 async function raiseDispute() { return sendMessage("raise_dispute"); }
 
@@ -288,6 +287,6 @@ async function disconnect() {
 
 module.exports = {
     init, setContractAddress, getSignerAddress, createEscrow,
-    completeWork, releasePayment, refundClient, raiseDispute,
+    releasePayment, refundClient, raiseDispute,
     getState, disconnect
 };
