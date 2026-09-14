@@ -80,3 +80,22 @@ npm --prefix frontend run contract:test
 Use these for contract-only builds, frontend-only builds, and frontend
 development. `npm run server` starts the CommonJS Express webhook server from
 the Vite app folder and serves the built frontend from `frontend/dist/`.
+
+# MCP Server
+```
+{
+  "mcpServers": {
+    "polkadot-agent-kit": {
+      "command": "node",
+      "args": [
+        "/opt/misc/polkadot/polkaward/mcp-server.js"
+      ],
+      "env": {
+        "PRIVATE_KEY": "0x1234567890abcdef..."
+      }
+    }
+  }
+}
+```
+
+To get AGENT_PRIVATE_KEY run: sh key.sh "<YOUR MNEMONIC>"
