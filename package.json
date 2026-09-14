@@ -15,6 +15,9 @@
     "dev": "concurrently --kill-others --names server,ui --prefix-colors yellow,cyan \"npm run server\" \"npm run frontend:dev\""
   },
   "devDependencies": {
+    "@galacticcouncil/api-augment": "^0.10.0",
+    "@polkadot-agent-kit/mcp": "^2.1.0",
+    "@polkadot-agent-kit/sdk": "^2.1.0",
     "concurrently": "^10.0.3"
   },
   "dependencies": {
