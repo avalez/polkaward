@@ -3,6 +3,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { PolkadotAgentKit } from '@polkadot-agent-kit/sdk';
 import { getMcpTools } from '@polkadot-agent-kit/mcp';
+// Import utilities to access and modify chain definitions
+import { getAllSupportedChains } from '@polkadot-agent-kit/common';
 
 async function runServer() {
   const privateKey = process.env.PRIVATE_KEY;
@@ -13,8 +15,21 @@ async function runServer() {
 
   const agentKit = new PolkadotAgentKit({
     privateKey,
-    chains: ['polkadot', 'kusama', 'westend'],
+    chains: ['polkadot'/*, 'polkadot_asset_hub'*/],
   });
+  // Override RPC URLs if WS_PROVIDER is defined
+  const customProvider = process.env.WS_PROVIDER;
+  if (customProvider) {
+    const supportedChains = getAllSupportedChains();
+    // Apply to the chains the agent will use
+    ['polkadot', 'kusama', 'westend'].forEach((id) => {
+      const chain = supportedChains.find((c) => c.id === id);
+      if (chain) {
+        // Ensure wsUrls is an array of strings
+        chain.wsUrls = [customProvider];
+      }
+    });
+  }
 
   await agentKit.initializeApi();
 

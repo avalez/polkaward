@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Contribution rewards on Polkadot",
+  "type": "module",
   "scripts": {
     "build": "npm run contract:build && npm run frontend:build",
     "contract:build": "cargo contract build",
@@ -21,6 +22,7 @@
     "concurrently": "^10.0.3"
   },
   "dependencies": {
-    "bip39": "^3.1.0"
+    "bip39": "^3.1.0",
+    "ollama": "^0.6.3"
   }
 }

@@ -169,7 +169,7 @@ async function queryMessage(methodName, args = [], options = {}) {
     }
 
     return {
-        gasRequired: dryRunResult.weightRequired,
+        gasRequired: dryRunResult.gasRequired,
         storageDeposit: dryRunResult.storageDeposit,
         output: dryRunResult.result.asOk.data
     };
@@ -240,8 +240,8 @@ async function createEscrow(provider, arbitrator, duration, value = "10000000000
     }
 
     const gasLimit = api.registry.createType("Weight", {
-        refTime: (BigInt(dryRunResult.weightRequired.refTime.toString()) * 12n) / 10n,
-        proofSize: (BigInt(dryRunResult.weightRequired.proofSize.toString()) * 12n) / 10n
+        refTime: (BigInt(dryRunResult.gasRequired.refTime.toString()) * 12n) / 10n,
+        proofSize: (BigInt(dryRunResult.gasRequired.proofSize.toString()) * 12n) / 10n
     });
 
     const tx = api.tx.revive.instantiateWithCode(
